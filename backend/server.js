@@ -14,7 +14,34 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+
+// ── Production CORS Configuration ─────────────────────────────────────────────
+// Explicitly allow your Netlify frontend and Localhost (for local development)
+const allowedOrigins = [
+  "https://hostel-management-system-sk.netlify.app", // Your Production Frontend
+  "http://localhost:5173",                           // Local Dev (Vite)
+  "http://localhost:3000"                            // Local Dev (CRA)
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // allow requests with no origin (like mobile apps or curl requests)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true, // Allow cookies/Authorization headers to be sent
+  })
+);
+
+// ── Root Health Check (Required for Render) ───────────────────────────────────
+// Render pings the root to verify if the server deployed successfully
+app.get("/", (req, res) => {
+  res.status(200).json({ message: "Backend API is successfully running!" });
+});
 
 // ── Database ─────────────────────────────────────────────────────────────────
 mongoose
