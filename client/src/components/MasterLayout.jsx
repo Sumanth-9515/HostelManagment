@@ -1,16 +1,13 @@
 import { useNavigate, NavLink } from "react-router-dom";
-import { clearSession, getSession } from "./ui.jsx";
+import { clearSession } from "./ui.jsx";
 
 const NAV = [
-  { to: "/dashboard",    label: "Dashboard"   },
-  { to: "/overview",     label: "Overview"    },
-  { to: "/addhostel",    label: "Properties"  },
-  { to: "/addcandidate", label: "Add Tenant"  },
+  { to: "/master/dashboard", label: "Overview" },
+  { to: "/master/users",     label: "Users"    },
 ];
 
-export default function Layout({ children }) {
+export default function MasterLayout({ children }) {
   const navigate = useNavigate();
-  const user = getSession();
 
   const handleLogout = () => {
     clearSession();
@@ -27,8 +24,14 @@ export default function Layout({ children }) {
         position: "sticky", top: 0, height: "100vh",
       }}>
         {/* Logo */}
-        <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", marginBottom: 32, padding: "0 8px" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6, padding: "0 8px" }}>
           HOSTELIQ
+        </div>
+        <div style={{
+          fontSize: 9, fontWeight: 600, letterSpacing: "0.1em", color: "var(--text-3)",
+          textTransform: "uppercase", padding: "0 8px", marginBottom: 28,
+        }}>
+          Master Admin
         </div>
 
         {/* Nav links */}
@@ -51,14 +54,8 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        {/* User + Logout */}
+        {/* Logout */}
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8 }}>
-          {user && (
-            <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 10, padding: "0 4px" }}>
-              <div style={{ fontWeight: 500, color: "var(--text-2)", marginBottom: 1 }}>{user.owner}</div>
-              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
-            </div>
-          )}
           <button
             onClick={handleLogout}
             style={{

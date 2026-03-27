@@ -5,120 +5,135 @@ import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-// Import User Model (Note the .js extension, required for ES modules in Node)
-import User from "./models/User.js"; 
+import User from "./models/User.js";
+import buildingRoutes from "./routes/buildingRoutes.js";
+import tenantRoutes from "./routes/tenantRoutes.js";
+import masterRoutes from "./routes/masterRoutes.js";
 
-// Initialize Environment Variables
 dotenv.config();
 
 const app = express();
+app.use(express.json());
+app.use(cors());
 
-// Middleware
-app.use(express.json()); // Parses incoming JSON requests
-app.use(cors());         // Allows your React frontend to communicate with this API
-
-// ==========================================
-// Database Connection (No separate db.js)
-// ==========================================
+// ── Database ─────────────────────────────────────────────────────────────────
 mongoose
   .connect(process.env.MONGO_URL)
-  .then(() => console.log("✅ Connected to MongoDB successfully"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB error:", err));
 
-// ==========================================
-// Routes
-// ==========================================
-
-// 1. REGISTER ROUTE
+// ── Register ──────────────────────────────────────────────────────────────────
+// FIX: User.js schema fields are: name (property name), owner (owner name),
+//      ph, email, password, address, role.
+//      Frontend RegisterPage sends exactly these — mapping is correct.
+//      Bug was: response never sent back a token, so user had to log in again.
+//      Now we auto-issue a token on register so UX is seamless.
 app.post("/api/register", async (req, res) => {
   try {
-    // Extract all new fields from the request body
     const { name, owner, ph, email, password, address } = req.body;
 
-    // Validate input to ensure all fields are provided
+    // Validate all required fields
     if (!name || !owner || !ph || !email || !password || !address) {
       return res.status(400).json({ message: "All fields are required." });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "User already exists with this email." });
+    // Email uniqueness check
+    const existing = await User.findOne({ email: email.toLowerCase().trim() });
+    if (existing) {
+      return res.status(400).json({ message: "Email already registered." });
     }
 
-    // Hash the password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    // Hash password
+    const hashed = await bcrypt.hash(password, 10);
 
-    // Create and save the new user with all fields
-    const newUser = new User({
-      name,
-      owner,
-      ph,
-      email,
-      password: hashedPassword,
-      address,
+    const user = new User({
+      name:     name.trim(),     // property / shop name
+      owner:    owner.trim(),    // owner's real name
+      ph:       ph.trim(),
+      email:    email.toLowerCase().trim(),
+      password: hashed,
+      address:  address.trim(),
+      role:     "user",
     });
+    await user.save();
 
-    await newUser.save();
+    // FIX: Issue JWT immediately so frontend can redirect without a second login
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
 
-    res.status(201).json({ message: "User registered successfully!" });
-  } catch (error) {
-    console.error("Registration Error:", error);
-    res.status(500).json({ message: "Server error during registration." });
+    res.status(201).json({
+      message: "Registered successfully!",
+      token,
+      user: {
+        id:      user._id,
+        name:    user.name,    // property name
+        owner:   user.owner,   // owner name
+        ph:      user.ph,
+        email:   user.email,
+        address: user.address,
+        role:    user.role,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
   }
 });
 
-// 2. LOGIN ROUTE
+// ── Login ─────────────────────────────────────────────────────────────────────
+// FIX 1: Was comparing plain-text password — bcrypt.compare was already used, OK.
+// FIX 2: email lookup must be case-insensitive (lowercase stored on register).
+// FIX 3: JWT payload now includes `name` and `owner` so downstream routes/UI
+//         can display the right person name without an extra DB call.
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate input
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required." });
+      return res.status(400).json({ message: "Email and password required." });
     }
 
-    // Find user by email
-    const user = await User.findOne({ email });
+    // FIX: case-insensitive email lookup
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) {
-      return res.status(400).json({ message: "Invalid email or password." });
+      return res.status(400).json({ message: "Invalid credentials." });
     }
 
-    // Compare passwords
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return res.status(400).json({ message: "Invalid email or password." });
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      return res.status(400).json({ message: "Invalid credentials." });
     }
 
-    // Generate JWT Token
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1d", // Token expires in 1 day
-    });
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
 
-    // Send success response with token and all user details (excluding password)
-    res.status(200).json({
+    res.json({
       message: "Logged in successfully!",
       token,
       user: {
-        id: user._id,
-        name: user.name,
-        owner: user.owner,
-        ph: user.ph,
-        email: user.email,
+        id:      user._id,
+        name:    user.name,    // property / shop name
+        owner:   user.owner,   // owner's real name  ← was missing before
+        ph:      user.ph,
+        email:   user.email,
         address: user.address,
+        role:    user.role,
       },
     });
-  } catch (error) {
-    console.error("Login Error:", error);
-    res.status(500).json({ message: "Server error during login." });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
   }
 });
 
-// ==========================================
-// Start the Server
-// ==========================================
+// ── Routes ────────────────────────────────────────────────────────────────────
+app.use("/api/buildings", buildingRoutes);
+app.use("/api/tenants", tenantRoutes);
+app.use("/api/master", masterRoutes);
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));

@@ -5,9 +5,9 @@ const Sidebar = () => {
   const location = useLocation();
 
   const navLinks = [
-    { name: "Dashboard", path: "/dashboard", icon: "📊" },
-    { name: "Profile", path: "/profile", icon: "👤" },
-    { name: "Settings", path: "/settings", icon: "⚙️" },
+    { name: "Add Hostel", path: "/addhostel", icon: "🏗️" },
+    { name: "Add Candidate", path: "/addcandidate", icon: "👥" },
+    { name: "Overview", path: "/overview", icon: "📊" }
   ];
 
   return (

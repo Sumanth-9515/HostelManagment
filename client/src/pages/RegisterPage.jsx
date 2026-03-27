@@ -1,173 +1,199 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import toast from "react-hot-toast";
+import { API } from "../api.js";
+import { inputStyle, Btn } from "../components/ui.jsx";
 
-const RegisterPage = () => {
-  const [formData, setFormData] = useState({
-    name: "",
-    owner: "",
-    ph: "",
-    email: "",
+export default function RegisterPage() {
+  const [form, setForm] = useState({
+    name:     "",   // property / shop name  (maps to User.name in schema)
+    owner:    "",   // owner's real name     (maps to User.owner in schema)
+    ph:       "",
+    email:    "",
     password: "",
-    address: "",
+    address:  "",
   });
-  
   const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
   const navigate = useNavigate();
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const set = (k) => (e) => {
+    setForm({ ...form, [k]: e.target.value });
+    setError(""); // clear error on any change
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    
-    const { name, owner, ph, email, password, address } = formData;
+    const { name, owner, ph, email, password, address } = form;
 
     if (!name || !owner || !ph || !email || !password || !address) {
-      toast.error("Please fill in all fields");
-      return;
+      return setError("All fields are required.");
     }
 
+    // Basic email format check client-side
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      return setError("Please enter a valid email address.");
+    }
+
+    if (password.length < 6) {
+      return setError("Password must be at least 6 characters.");
+    }
+
+    setError("");
+    setLoading(true);
+
     try {
-      setLoading(true);
-      const response = await fetch("http://localhost:5000/api/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
+      const res = await fetch(`${API}/register`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name:     name.trim(),
+          owner:    owner.trim(),
+          ph:       ph.trim(),
+          email:    email.trim().toLowerCase(),  // FIX: normalise before sending
+          password: password,                     // do NOT trim password
+          address:  address.trim(),
+        }),
       });
 
-      const data = await response.json();
+      const data = await res.json();
+      if (!res.ok) return setError(data.message || "Registration failed.");
 
-      if (response.ok) {
-        toast.success("Account created successfully!");
-        navigate("/login"); 
+      // FIX: server now returns a token on register — log them in immediately
+      // instead of redirecting to /login and making them type credentials again.
+      if (data.token && data.user) {
+        sessionStorage.setItem("token", data.token);
+        sessionStorage.setItem("user",  JSON.stringify(data.user));
+
+        // Role-based redirect (new users are always "user", but be defensive)
+        if (data.user.role === "master") {
+          navigate("/master/dashboard");
+        } else {
+          navigate("/dashboard");
+        }
       } else {
-        toast.error(data.message || "Registration failed");
+        // Fallback: server didn't return token (old server version) → go to login
+        navigate("/login");
       }
-    } catch (error) {
-      console.error("Registration Error:", error);
-      toast.error("Something went wrong. Please try again.");
+    } catch {
+      setError("Cannot connect to server. Make sure the backend is running.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    /* THIS WRAPPER CENTERS THE BOX ON THE SCREEN */
-    <div className="flex items-center justify-center min-h-screen w-full p-4">
-      <div className="w-full max-w-lg p-8 space-y-6 bg-white rounded-xl shadow-lg dark:bg-gray-800">
-        <h2 className="text-3xl font-bold text-center text-gray-800 dark:text-white">
-          Create an Account
-        </h2>
-        
-        <form onSubmit={handleRegister} className="space-y-4">
-          <div className="flex flex-col gap-4 sm:flex-row">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Company/Shop Name
-              </label>
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center",
+      justifyContent: "center", background: "var(--bg)", padding: 20,
+    }}>
+      <div style={{ width: "100%", maxWidth: 440 }}>
+
+        <div style={{ marginBottom: 36, textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.06em", marginBottom: 6 }}>
+            HOSTELIQ
+          </div>
+          <p style={{ fontSize: 13, color: "var(--text-2)" }}>Create your account</p>
+        </div>
+
+        <form onSubmit={handleRegister} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Property / Shop Name *</label>
               <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                placeholder="Store Name"
+                style={inputStyle}
+                value={form.name}
+                onChange={set("name")}
+                placeholder="Block A Hostel"
+                autoFocus
               />
             </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Owner Name
-              </label>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Owner Name *</label>
               <input
-                type="text"
-                name="owner"
-                value={formData.owner}
-                onChange={handleChange}
-                className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                style={inputStyle}
+                value={form.owner}
+                onChange={set("owner")}
                 placeholder="John Doe"
               />
             </div>
           </div>
 
-          <div className="flex flex-col gap-4 sm:flex-row">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Phone Number
-              </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Phone *</label>
               <input
+                style={inputStyle}
+                value={form.ph}
+                onChange={set("ph")}
+                placeholder="9876543210"
                 type="tel"
-                name="ph"
-                value={formData.ph}
-                onChange={handleChange}
-                className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                placeholder="+1 234 567 890"
               />
             </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Email
-              </label>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Email *</label>
               <input
                 type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                style={inputStyle}
+                value={form.email}
+                onChange={set("email")}
                 placeholder="you@example.com"
+                autoComplete="email"
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Password
-            </label>
+          <div style={fieldWrap}>
+            <label style={labelStyle}>Password *</label>
             <input
               type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              placeholder="••••••••"
+              style={inputStyle}
+              value={form.password}
+              onChange={set("password")}
+              placeholder="Min. 6 characters"
+              autoComplete="new-password"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Address
-            </label>
+          <div style={fieldWrap}>
+            <label style={labelStyle}>Address *</label>
             <textarea
-              name="address"
-              value={formData.address}
-              onChange={handleChange}
-              rows="2"
-              className="w-full px-4 py-2 mt-1 border rounded-md focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              placeholder="123 Main Street, City"
-            ></textarea>
+              style={{ ...inputStyle, resize: "vertical", minHeight: 70 }}
+              value={form.address}
+              onChange={set("address")}
+              placeholder="Full address of your property"
+            />
           </div>
 
-          <button
+          {error && (
+            <div style={{
+              fontSize: 12,
+              color: "var(--red)",
+              padding: "8px 12px",
+              background: "var(--red-bg)",
+              borderRadius: "var(--radius)",
+            }}>
+              {error}
+            </div>
+          )}
+
+          <Btn
             type="submit"
             disabled={loading}
-            className="w-full px-4 py-2 font-bold text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50"
+            style={{ width: "100%", padding: "10px", marginTop: 4 }}
           >
-            {loading ? "Registering..." : "Register"}
-          </button>
+            {loading ? "Creating account…" : "Create account"}
+          </Btn>
         </form>
 
-        <p className="text-sm text-center text-gray-600 dark:text-gray-400">
+        <p style={{ marginTop: 20, textAlign: "center", fontSize: 12, color: "var(--text-3)" }}>
           Already have an account?{" "}
-          <Link to="/login" className="text-blue-600 hover:underline dark:text-blue-400">
-            Login here
-          </Link>
+          <Link to="/login" style={{ color: "var(--text)", fontWeight: 500 }}>Sign in</Link>
         </p>
       </div>
     </div>
   );
-};
+}
 
-export default RegisterPage;
+const labelStyle = { fontSize: 12, fontWeight: 500, color: "var(--text-2)", marginBottom: 4, display: "block" };
+const fieldWrap  = { display: "flex", flexDirection: "column", gap: 5 };
