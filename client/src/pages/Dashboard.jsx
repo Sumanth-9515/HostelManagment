@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 // Matches Rentmanagement.jsx & Addcandidate.jsx exactly:
 // VITE_API_URL = "http://localhost:5000"  (no /api suffix here)
-const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const API  = `${BASE}/api`;
+const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const API  = `${BASE}`;
 
 // ✅ sessionStorage — matches RegisterPage.jsx & Rentmanagement.jsx
 const getToken = () => sessionStorage.getItem("token") || "";

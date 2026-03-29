@@ -20,6 +20,8 @@ import Layout             from "./components/Layout";
 import MasterLayout       from "./components/MasterLayout";
 import RentManagement from "./pages/Rentmanagement.jsx";
 import ManageLogins from "./pages/master/Managelogins.jsx";
+import TenantOnboardingForm from "./pages/Tenantonboardingform.jsx";
+import OnboardingManager from "./pages/Onboardingmanager.jsx";
 
 // ── Auth guards ───────────────────────────────────────────────────────────────
 function RequireUser({ children }) {
@@ -46,7 +48,7 @@ export default function App() {
       {/* ── Public ─────────────────────────────────────────────────────── */}
       <Route path="/login"    element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-
+      <Route path="/tenant-onboarding" element={<TenantOnboardingForm />} />
       {/* ── Tenant self-registration (no auth — uses link token in URL) ── */}
       {/* Owner shares: http://yourapp/tenant-register/<JWT>               */}
       <Route path="/tenant-register/:token" element={<TenantRegisterPage />} />
@@ -66,6 +68,9 @@ export default function App() {
       } />
     <Route path="/rent-management" element={
         <RequireUser><Layout><RentManagement/></Layout></RequireUser>
+      } />
+          <Route path="/onboarding-manager" element={
+        <RequireUser><Layout><OnboardingManager/></Layout></RequireUser>
       } />
 
       {/* ── Master routes wrapped in MasterLayout ──────────────────────── */}

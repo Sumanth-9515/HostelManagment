@@ -5,7 +5,8 @@ import Swal from "sweetalert2";
 
 const INIT = {
   name: "", phone: "", email: "", fatherName: "", fatherPhone: "",
-  permanentAddress: "", joiningDate: new Date().toISOString().split("T")[0], rentAmount: "",
+  permanentAddress: "", joiningDate: new Date().toISOString().split("T")[0],
+  rentAmount: "", advanceAmount: "",
 };
 
 export default function AddCandidate() {
@@ -191,7 +192,6 @@ export default function AddCandidate() {
     setLoading(true);
     const formData = new FormData();
     
-    // Add form fields
     formData.append("name", form.name);
     formData.append("phone", form.phone);
     if (form.email) formData.append("email", form.email);
@@ -200,14 +200,14 @@ export default function AddCandidate() {
     formData.append("permanentAddress", form.permanentAddress);
     formData.append("joiningDate", form.joiningDate);
     formData.append("rentAmount", String(Number(form.rentAmount)));
+    // Advance: send 0 if empty/not entered
+    formData.append("advanceAmount", form.advanceAmount ? String(Number(form.advanceAmount)) : "0");
     
-    // Add allocation data (mandatory)
     formData.append("buildingId", selBuilding);
     formData.append("floorId", selFloor);
     formData.append("roomId", selRoom);
     formData.append("bedId", selBed);
     
-    // Add files (mandatory)
     formData.append("aadharFront", aadharFront);
     formData.append("aadharBack", aadharBack);
     formData.append("passportPhoto", passportPhoto);
@@ -285,7 +285,7 @@ export default function AddCandidate() {
         </p>
       </div>
 
-      {/* Step indicator - Responsive */}
+      {/* Step indicator */}
       <div style={{ 
         display: "flex", 
         justifyContent: "center",
@@ -345,6 +345,7 @@ export default function AddCandidate() {
         transition: "all 0.3s ease",
         boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
       }}>
+        {/* ── STEP 1: Personal Details ── */}
         {step === 1 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "clamp(16px, 4vw, 20px)" }}>
             <div style={{ 
@@ -420,7 +421,7 @@ export default function AddCandidate() {
             
             <div style={{ 
               display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
               gap: "clamp(16px, 4vw, 20px)" 
             }}>
               <div>
@@ -440,7 +441,26 @@ export default function AddCandidate() {
                   value={form.rentAmount} 
                   onChange={(e) => setForm({ ...form, rentAmount: e.target.value })} 
                   placeholder="5000" 
+                  min="1"
                 />
+              </div>
+              {/* ── NEW: Advance Amount field ── */}
+              <div>
+                <label style={lblStyle}>
+                  Advance Amount (₹)
+                  <span style={{ fontWeight: 400, color: "var(--text-3)", marginLeft: 4 }}>(optional)</span>
+                </label>
+                <input 
+                  style={inputStyle} 
+                  type="number" 
+                  value={form.advanceAmount} 
+                  onChange={(e) => setForm({ ...form, advanceAmount: e.target.value })} 
+                  placeholder="0" 
+                  min="0"
+                />
+                <p style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>
+                  Leave blank or 0 if no advance collected.
+                </p>
               </div>
             </div>
             
@@ -452,6 +472,7 @@ export default function AddCandidate() {
           </div>
         )}
 
+        {/* ── STEP 2: Documents ── */}
         {step === 2 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "clamp(20px, 5vw, 24px)" }}>
             <div style={{ 
@@ -559,14 +580,14 @@ export default function AddCandidate() {
               >
                 {passportPhotoPreview ? (
                   <div>
-                    <img src={passportPhotoPreview} alt="Passport Photo" style={{ maxWidth: "100%", maxHeight: 150, objectFit: "contain", borderRadius: 8 }} />
+                    <img src={passportPhotoPreview} alt="Passport Photo" style={{ maxWidth: 120, maxHeight: 150, objectFit: "contain", borderRadius: 8 }} />
                     <p style={{ fontSize: 12, color: "#10b981", marginTop: 8 }}>✓ File uploaded - Click to change</p>
                   </div>
                 ) : (
                   <div>
-                    <div style={{ fontSize: 40, marginBottom: 8 }}>📸</div>
+                    <div style={{ fontSize: 40, marginBottom: 8 }}>🖼️</div>
                     <p style={{ fontSize: "clamp(12px, 3vw, 13px)", color: "var(--text-2)", margin: 0 }}>Click to upload Passport Photo</p>
-                    <p style={{ fontSize: "clamp(10px, 2.5vw, 11px)", color: "var(--text-3)", marginTop: 4 }}>JPG, PNG (Max 5MB)</p>
+                    <p style={{ fontSize: "clamp(10px, 2.5vw, 11px)", color: "var(--text-3)", marginTop: 4 }}>JPG or PNG (Max 5MB)</p>
                   </div>
                 )}
               </div>
@@ -591,6 +612,7 @@ export default function AddCandidate() {
           </div>
         )}
 
+        {/* ── STEP 3: Room Allocation ── */}
         {step === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "clamp(16px, 4vw, 20px)" }}>
             <div style={{ 

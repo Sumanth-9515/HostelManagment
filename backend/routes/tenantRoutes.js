@@ -1,11 +1,25 @@
 import express from "express";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
+import crypto from "crypto";
 import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
 import jwt from "jsonwebtoken";
 
 const router = express.Router();
+
+// ── In-memory short-token store ──────────────────────────────────────────────
+// Maps  shortCode → { jwtToken, expiresAt }
+// For production, store in Redis or a DB collection instead.
+const shortTokenStore = new Map();
+
+// Cleanup expired entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of shortTokenStore.entries()) {
+    if (v.expiresAt < now) shortTokenStore.delete(k);
+  }
+}, 60 * 60 * 1000); // clean every hour
 
 // Configure Cloudinary
 let upload;
@@ -87,23 +101,46 @@ const auth = (req, res, next) => {
   }
 };
 
-// PUBLIC ROUTES
+// ── PUBLIC ROUTES ─────────────────────────────────────────────────────────────
+
+// Generate a SHORT onboarding link (8-char code instead of full JWT in URL)
 router.get("/generate-link", auth, (req, res) => {
-  const linkToken = jwt.sign(
+  // Full JWT stored server-side, only a short code goes in the URL
+  const jwtToken = jwt.sign(
     { id: req.user.id, purpose: "tenant-registration" },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
 
+  // 8-character alphanumeric short code
+  const shortCode = crypto.randomBytes(5).toString("base64url").slice(0, 8);
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  shortTokenStore.set(shortCode, { jwtToken, expiresAt });
+
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  const link = `${frontendUrl}/tenant-register/${linkToken}`;
+  const link = `${frontendUrl}/tenant-register/${shortCode}`;
 
   res.json({ link, expiresIn: "7 days" });
 });
 
+// Validate a short code (or legacy full JWT — backwards compatible)
 router.get("/validate-link/:token", async (req, res) => {
   try {
-    const decoded = jwt.verify(req.params.token, process.env.JWT_SECRET);
+    let decoded;
+    const raw = req.params.token;
+
+    // Short code path (≤ 12 chars)
+    if (raw.length <= 12) {
+      const entry = shortTokenStore.get(raw);
+      if (!entry || entry.expiresAt < Date.now()) {
+        return res.status(401).json({ message: "Link is invalid or has expired." });
+      }
+      decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
+    } else {
+      // Legacy full-JWT path
+      decoded = jwt.verify(raw, process.env.JWT_SECRET);
+    }
 
     if (decoded.purpose && decoded.purpose !== "tenant-registration") {
       return res.status(403).json({ message: "Invalid link purpose." });
@@ -132,6 +169,7 @@ router.get("/validate-link/:token", async (req, res) => {
   }
 });
 
+// Self-registration via onboarding link
 router.post("/register-via-link", upload.fields([
   { name: "aadharFront", maxCount: 1 },
   { name: "aadharBack", maxCount: 1 },
@@ -141,13 +179,22 @@ router.post("/register-via-link", upload.fields([
     const {
       linkToken,
       name, phone, email, fatherName, fatherPhone, permanentAddress, 
-      joiningDate, rentAmount,
+      joiningDate, rentAmount, advanceAmount,
       buildingId, floorId, roomId, bedId,
     } = req.body;
 
+    // Resolve short code or legacy full JWT
     let decoded;
     try {
-      decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
+      if (linkToken && linkToken.length <= 12) {
+        const entry = shortTokenStore.get(linkToken);
+        if (!entry || entry.expiresAt < Date.now()) {
+          return res.status(401).json({ message: "Registration link is invalid or expired." });
+        }
+        decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
+      } else {
+        decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
+      }
     } catch {
       return res.status(401).json({ message: "Registration link is invalid or expired." });
     }
@@ -201,6 +248,8 @@ router.post("/register-via-link", upload.fields([
       }
     }
 
+    const advance = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
+
     let allocationInfo = {};
 
     if (buildingId && floorId && roomId && bedId) {
@@ -229,8 +278,9 @@ router.post("/register-via-link", upload.fields([
 
       const tenant = new Tenant({
         owner: ownerId, name, phone, email, fatherName, fatherPhone, 
-        permanentAddress, joiningDate, rentAmount, documents,
+        permanentAddress, joiningDate, rentAmount, advanceAmount: advance, documents,
         buildingId, floorId, roomId, bedId, allocationInfo,
+        source: "onboarding-link",
       });
       await tenant.save();
 
@@ -246,7 +296,8 @@ router.post("/register-via-link", upload.fields([
 
     const tenant = new Tenant({
       owner: ownerId, name, phone, email, fatherName, fatherPhone,
-      permanentAddress, joiningDate, rentAmount, documents,
+      permanentAddress, joiningDate, rentAmount, advanceAmount: advance, documents,
+      source: "onboarding-link",
     });
     await tenant.save();
 
@@ -260,7 +311,9 @@ router.post("/register-via-link", upload.fields([
   }
 });
 
-// PROTECTED ROUTES
+// ── PROTECTED ROUTES ──────────────────────────────────────────────────────────
+
+// Add tenant (admin)
 router.post("/", auth, upload.fields([
   { name: "aadharFront", maxCount: 1 },
   { name: "aadharBack", maxCount: 1 },
@@ -269,17 +322,15 @@ router.post("/", auth, upload.fields([
   try {
     const { 
       name, phone, email, fatherName, fatherPhone, permanentAddress, 
-      joiningDate, rentAmount, buildingId, floorId, roomId, bedId 
+      joiningDate, rentAmount, advanceAmount, buildingId, floorId, roomId, bedId 
     } = req.body;
 
-    // Validate required fields
     if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount) {
       return res.status(400).json({ 
         message: "Name, phone, permanentAddress, joiningDate, rentAmount are required." 
       });
     }
 
-    // Process documents
     let documents = {
       aadharFront: null,
       aadharBack: null,
@@ -288,19 +339,50 @@ router.post("/", auth, upload.fields([
 
     if (req.files) {
       if (req.files.aadharFront) {
-        documents.aadharFront = `data:${req.files.aadharFront[0].mimetype};base64,${req.files.aadharFront[0].buffer.toString('base64')}`;
+        if (process.env.CLOUDINARY_CLOUD_NAME) {
+          try {
+            documents.aadharFront = await uploadToCloudinary(
+              req.files.aadharFront[0].buffer,
+              "tenant_documents/aadhar"
+            );
+          } catch { /* fall back to base64 */ }
+        }
+        if (!documents.aadharFront) {
+          documents.aadharFront = `data:${req.files.aadharFront[0].mimetype};base64,${req.files.aadharFront[0].buffer.toString('base64')}`;
+        }
       }
       if (req.files.aadharBack) {
-        documents.aadharBack = `data:${req.files.aadharBack[0].mimetype};base64,${req.files.aadharBack[0].buffer.toString('base64')}`;
+        if (process.env.CLOUDINARY_CLOUD_NAME) {
+          try {
+            documents.aadharBack = await uploadToCloudinary(
+              req.files.aadharBack[0].buffer,
+              "tenant_documents/aadhar"
+            );
+          } catch { /* fall back to base64 */ }
+        }
+        if (!documents.aadharBack) {
+          documents.aadharBack = `data:${req.files.aadharBack[0].mimetype};base64,${req.files.aadharBack[0].buffer.toString('base64')}`;
+        }
       }
       if (req.files.passportPhoto) {
-        documents.passportPhoto = `data:${req.files.passportPhoto[0].mimetype};base64,${req.files.passportPhoto[0].buffer.toString('base64')}`;
+        if (process.env.CLOUDINARY_CLOUD_NAME) {
+          try {
+            documents.passportPhoto = await uploadToCloudinary(
+              req.files.passportPhoto[0].buffer,
+              "tenant_documents/passport"
+            );
+          } catch { /* fall back to base64 */ }
+        }
+        if (!documents.passportPhoto) {
+          documents.passportPhoto = `data:${req.files.passportPhoto[0].mimetype};base64,${req.files.passportPhoto[0].buffer.toString('base64')}`;
+        }
       }
     }
 
+    const advance = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
+
     let allocationInfo = {};
     
-    // Handle bed allocation
     if (buildingId && floorId && roomId && bedId && 
         buildingId !== "" && floorId !== "" && roomId !== "" && bedId !== "") {
       
@@ -336,7 +418,8 @@ router.post("/", auth, upload.fields([
         fatherPhone: fatherPhone ? fatherPhone.trim() : null,
         permanentAddress: permanentAddress.trim(), 
         joiningDate, 
-        rentAmount: Number(rentAmount), 
+        rentAmount: Number(rentAmount),
+        advanceAmount: advance,
         documents,
         buildingId, 
         floorId, 
@@ -357,7 +440,6 @@ router.post("/", auth, upload.fields([
       });
     }
 
-    // Create tenant without allocation
     const tenant = new Tenant({ 
       owner: req.user.id, 
       name: name.trim(), 
@@ -367,7 +449,8 @@ router.post("/", auth, upload.fields([
       fatherPhone: fatherPhone ? fatherPhone.trim() : null,
       permanentAddress: permanentAddress.trim(), 
       joiningDate, 
-      rentAmount: Number(rentAmount), 
+      rentAmount: Number(rentAmount),
+      advanceAmount: advance,
       documents 
     });
     
@@ -385,7 +468,9 @@ router.post("/", auth, upload.fields([
 
 router.get("/", auth, async (req, res) => {
   try {
-    const tenants = await Tenant.find({ owner: req.user.id }).sort({ createdAt: -1 });
+    const filter = { owner: req.user.id };
+    if (req.query.source) filter.source = req.query.source;
+    const tenants = await Tenant.find(filter).sort({ createdAt: -1 });
     res.json(tenants);
   } catch (err) {
     console.error("Error fetching tenants:", err);
@@ -410,11 +495,12 @@ router.put("/:id", auth, upload.fields([
   { name: "passportPhoto", maxCount: 1 }
 ]), async (req, res) => {
   try {
-    const { name, phone, email, fatherName, fatherPhone, permanentAddress, joiningDate, rentAmount, status } = req.body;
+    const { name, phone, email, fatherName, fatherPhone, permanentAddress, joiningDate, rentAmount, advanceAmount, status } = req.body;
     
     const updateData = { 
       name, phone, email, fatherName, fatherPhone, permanentAddress, 
-      joiningDate, rentAmount: rentAmount ? Number(rentAmount) : undefined, 
+      joiningDate, rentAmount: rentAmount ? Number(rentAmount) : undefined,
+      advanceAmount: advanceAmount !== undefined ? Number(advanceAmount) : undefined,
       status 
     };
     

@@ -2,7 +2,7 @@
  * RentManagement.jsx
  *
  * Drop this file into your pages or components folder.
- * Expects: localStorage.getItem("token") for auth header.
+ * Expects: sessionStorage.getItem("token") for auth header.
  * API base: import.meta.env.VITE_API_URL  (e.g. http://localhost:5000)
  *
  * Register route in app:
@@ -12,12 +12,11 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const authHeader = () => ({
   "Content-Type": "application/json",
-  // Change localStorage to sessionStorage here:
-  Authorization: `Bearer ${sessionStorage.getItem("token")}`, 
+  Authorization: `Bearer ${sessionStorage.getItem("token")}`,
 });
 
 // ─── tiny helpers ────────────────────────────────────────────────────────────
@@ -65,6 +64,108 @@ function buildWAMessage(tenant, record, buildingDetails) {
   );
 }
 
+// ─── Email Reminder Button ────────────────────────────────────────────────────
+/**
+ * Standalone button that sends a Brevo reminder email for a tenant.
+ * - Always clickable (backend re-fetches tenant and validates email).
+ * - Shows "Sent ✓" for 3 seconds after success, then resets.
+ * - On error, shows the backend message for 3 seconds, then resets.
+ * - tenantEmail is optional — only used for the tooltip to show address.
+ */
+function EmailReminderButton({ tenantId, tenantEmail, className = "" }) {
+  const [state, setState] = useState("idle"); // "idle" | "sending" | "sent" | "error"
+  const [errMsg, setErrMsg] = useState("");
+  const timerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const handleSend = async (e) => {
+    e.stopPropagation();
+    if (state === "sending" || state === "sent") return;
+
+    setState("sending");
+    setErrMsg("");
+    try {
+      const r = await fetch(`${API}/rent/send-reminder`, {
+        method: "POST",
+        headers: authHeader(),
+        body: JSON.stringify({ tenantId }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message || "Failed to send email.");
+      setState("sent");
+      timerRef.current = setTimeout(() => setState("idle"), 3000);
+    } catch (err) {
+      setErrMsg(err.message || "Error");
+      setState("error");
+      timerRef.current = setTimeout(() => { setState("idle"); setErrMsg(""); }, 3000);
+    }
+  };
+
+  const baseClass =
+    "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold border transition-all duration-200 select-none";
+
+  const mailIcon = (
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  );
+
+  if (state === "sent") {
+    return (
+      <button
+        disabled
+        className={`${baseClass} bg-emerald-50 border-emerald-200 text-emerald-700 ${className}`}
+        title="Email sent!"
+      >
+        <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-emerald-600 shrink-0">
+          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+        </svg>
+        Sent ✓
+      </button>
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <button
+        onClick={handleSend}
+        className={`${baseClass} bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100 ${className}`}
+        title={errMsg}
+      >
+        <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-rose-500 shrink-0">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-5a1 1 0 112 0v-4a1 1 0 11-2 0v4zm1-8a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+        </svg>
+        Failed
+      </button>
+    );
+  }
+
+  if (state === "sending") {
+    return (
+      <button
+        disabled
+        className={`${baseClass} bg-violet-50 border-violet-200 text-violet-500 opacity-75 ${className}`}
+      >
+        <div className="w-3 h-3 rounded-full border-2 border-violet-500 border-t-transparent animate-spin shrink-0" />
+        Sending…
+      </button>
+    );
+  }
+
+  // idle — always active, tooltip shows email if available
+  return (
+    <button
+      onClick={handleSend}
+      title={tenantEmail ? `Send email reminder to ${tenantEmail}` : "Send email reminder"}
+      className={`${baseClass} bg-violet-50 hover:bg-violet-500 border-violet-200 text-violet-700 hover:text-white ${className}`}
+    >
+      {mailIcon}
+      Email Reminder
+    </button>
+  );
+}
+
 // ─── Document Viewer Modal ────────────────────────────────────────────────────
 function DocumentViewer({ imageUrl, onClose }) {
   const handleOpenInNewTab = () => {
@@ -74,23 +175,18 @@ function DocumentViewer({ imageUrl, onClose }) {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
       <div className="relative max-w-4xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors text-2xl"
         >
           ✕
         </button>
-        
-        {/* Open in new tab button */}
         <button
           onClick={handleOpenInNewTab}
           className="absolute -top-12 right-12 text-white hover:text-gray-300 transition-colors text-sm bg-white/20 px-3 py-1 rounded-lg"
         >
           🔗 Open in new tab
         </button>
-        
-        {/* Image */}
         <img
           src={imageUrl}
           alt="Document"
@@ -123,7 +219,7 @@ function DueCard({ item, onSelect, onPayNow }) {
       onClick={() => onSelect(tenant._id)}
       className="relative group cursor-pointer rounded-2xl border border-gray-200 bg-white hover:border-amber-400 hover:shadow-md transition-all duration-200 overflow-hidden"
     >
-      {/* overdue strip */}
+      {/* status strip */}
       {isOverdue && (
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500" />
       )}
@@ -203,16 +299,23 @@ function DueCard({ item, onSelect, onPayNow }) {
           </div>
         </div>
 
-        {/* pay button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onPayNow(tenant._id, record?.monthYear, remaining);
-          }}
-          className="mt-3 w-full py-2 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition-all duration-150"
-        >
-          Pay Now
-        </button>
+        {/* action row: Pay Now + Email Reminder */}
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPayNow(tenant._id, record?.monthYear, remaining);
+            }}
+            className="flex-1 py-2 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition-all duration-150"
+          >
+            Pay Now
+          </button>
+          <EmailReminderButton
+            tenantId={tenant._id}
+            tenantEmail={tenant.email}
+            className="shrink-0 px-3"
+          />
+        </div>
       </div>
     </div>
   );
@@ -265,7 +368,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`${API}/api/rent/tenant/${tenantId}`, { headers: authHeader() });
+    const r = await fetch(`${API}/rent/tenant/${tenantId}`, { headers: authHeader() });
     const d = await r.json();
     setData(d);
     setLoading(false);
@@ -286,9 +389,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
   };
 
   const handleViewDocument = (docUrl) => {
-    if (docUrl) {
-      setViewingDoc(docUrl);
-    }
+    if (docUrl) setViewingDoc(docUrl);
   };
 
   return (
@@ -319,8 +420,8 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
                 </div>
                 <div className="flex-1">
                   <h3 className="text-gray-900 font-bold text-xl">{tenant?.name}</h3>
-                  <p className="text-gray-500 text-sm">{tenant?.email || "No email"}</p>
-                  <div className="flex gap-2 mt-2">
+                  <p className="text-gray-500 text-sm">{tenant?.email || "No email on record"}</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
                     <button
                       onClick={handleWA}
                       className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 text-emerald-700 hover:text-white transition-colors"
@@ -333,6 +434,13 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
                     >
                       <span>📞</span> Call
                     </a>
+                    {/* Email reminder button in detail modal */}
+                    {currentRecord?.status !== "Paid" && (
+                      <EmailReminderButton
+                        tenantId={tenant?._id}
+                        tenantEmail={tenant?.email}
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="text-right">
@@ -542,7 +650,7 @@ function PayModal({ tenantId, monthYear, maxAmount, onClose, onSuccess }) {
     setLoading(true);
     setError("");
     try {
-      const r = await fetch(`${API}/api/rent/pay`, {
+      const r = await fetch(`${API}/rent/pay`, {
         method: "POST",
         headers: authHeader(),
         body: JSON.stringify({ tenantId, amount: val, note, monthYear }),
@@ -617,6 +725,7 @@ function PayModal({ tenantId, monthYear, maxAmount, onClose, onSuccess }) {
 
           <p className="text-gray-400 text-xs text-center">
             Partial payments allowed. Remaining balance will carry forward.
+            {" "}A confirmation email will be sent automatically if the tenant has an email on record.
           </p>
         </div>
       </div>
@@ -659,7 +768,7 @@ export default function RentManagement() {
   // ── Load due cards ──────────────────────────────────────────────────────────
   const loadDue = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/api/rent/due`, { headers: authHeader() });
+      const r = await fetch(`${API}/rent/due`, { headers: authHeader() });
       const d = await r.json();
       if (Array.isArray(d)) setDueItems(d);
     } catch {}
@@ -680,7 +789,7 @@ export default function RentManagement() {
     setHasSearched(true);
     try {
       const r = await fetch(
-        `${API}/api/rent/search?q=${encodeURIComponent(searchQuery)}&type=${searchType}`,
+        `${API}/rent/search?q=${encodeURIComponent(searchQuery)}&type=${searchType}`,
         { headers: authHeader() }
       );
       const d = await r.json();
@@ -710,7 +819,6 @@ export default function RentManagement() {
     setPayModal(null);
     setToast(data.message || "Payment recorded!");
     setPaymentDone((n) => n + 1);
-    // Re-run search if active
     if (hasSearched) handleSearch();
   };
 

@@ -19,8 +19,9 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
   { to: "/rent-management", label: "Rent Management", icon: <ReceiptIndianRupee size={20} /> },
     { to: "/addcandidate", label: "Add Tenant", icon: <UserPlus size={20} /> },
-  { to: "/addhostel", label: "Rooms Management", icon: <Building2 size={20} /> },
-    { to: "/overview", label: "Buildings Overview", icon: <Eye size={20} /> },
+  { to: "/addhostel", label: "Property Management", icon: <Building2 size={20} /> },
+    { to: "/overview", label: "Overview", icon: <Eye size={20} /> },
+    { to: "/onboarding-manager", label: "Onboarding Manager", icon: <UserPlus size={20} /> },
   
 ];
 
@@ -28,7 +29,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const user = getSession();
   
-  const [isOpen, setIsOpen] = useState(true);
+const [isOpen, setIsOpen] = useState(window.innerWidth >= 768);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // Handle window resizing

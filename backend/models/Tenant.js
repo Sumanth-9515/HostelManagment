@@ -11,6 +11,8 @@ const TenantSchema = new mongoose.Schema(
     permanentAddress: { type: String, required: true },
     joiningDate: { type: Date, required: true },
     rentAmount: { type: Number, required: true },
+    // ── NEW: Advance amount paid at joining (optional, defaults to 0) ──
+    advanceAmount: { type: Number, default: 0 },
     buildingId: { type: mongoose.Schema.Types.ObjectId, ref: "Building", default: null },
     floorId: { type: mongoose.Schema.Types.ObjectId, default: null },
     roomId: { type: mongoose.Schema.Types.ObjectId, default: null },
@@ -22,9 +24,14 @@ const TenantSchema = new mongoose.Schema(
       bedNumber: Number,
     },
     documents: {
-      aadharFront: { type: String, default: null }, // Cloudinary URL
-      aadharBack: { type: String, default: null },  // Cloudinary URL
-      passportPhoto: { type: String, default: null } // Cloudinary URL
+      aadharFront:   { type: String, default: null }, // Cloudinary URL
+      aadharBack:    { type: String, default: null }, // Cloudinary URL
+      passportPhoto: { type: String, default: null }, // Cloudinary URL
+    },
+    source: {
+      type: String,
+      enum: ["admin", "onboarding-link"],
+      default: "admin",
     },
     status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
   },
