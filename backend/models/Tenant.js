@@ -6,6 +6,8 @@ const TenantSchema = new mongoose.Schema(
     name: { type: String, required: true },
     phone: { type: String, required: true },
     email: { type: String },
+    fatherName: { type: String },
+    fatherPhone: { type: String },
     permanentAddress: { type: String, required: true },
     joiningDate: { type: Date, required: true },
     rentAmount: { type: Number, required: true },
@@ -18,6 +20,11 @@ const TenantSchema = new mongoose.Schema(
       floorNumber: Number,
       roomNumber: String,
       bedNumber: Number,
+    },
+    documents: {
+      aadharFront: { type: String, default: null }, // Cloudinary URL
+      aadharBack: { type: String, default: null },  // Cloudinary URL
+      passportPhoto: { type: String, default: null } // Cloudinary URL
     },
     status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
   },

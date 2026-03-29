@@ -4,10 +4,429 @@ import { useToast, Toast, Modal, Badge, Btn, inputStyle } from "../components/ui
 
 const SHARE_OPTIONS = [1, 2, 3, 4, 5, 6];
 
+// ─── Styled Form Modal ────────────────────────────────────────────────────────
+function FormModal({ open, onClose, title, subtitle, icon, children }) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+      style={{ background: "rgba(15,23,42,0.45)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-modalPop"
+        style={{ background: "#fff" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Gradient Header */}
+        <div
+          className="px-6 pt-6 pb-5"
+          style={{
+            background: "linear-gradient(135deg, #1e40af 0%, #7c3aed 100%)",
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl">
+                {icon}
+              </div>
+              <div>
+                <h2 className="text-white font-bold text-lg leading-tight">{title}</h2>
+                {subtitle && <p className="text-blue-200 text-xs mt-0.5">{subtitle}</p>}
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors text-sm"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-6">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Styled Input ─────────────────────────────────────────────────────────────
+function FormField({ label, required, children }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">
+        {label} {required && <span className="text-blue-500">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+const fieldStyle =
+  "w-full px-4 py-3 rounded-xl border-2 border-gray-100 bg-gray-50 text-gray-900 text-sm font-medium placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-white transition-all";
+
+// ─── Action Buttons ───────────────────────────────────────────────────────────
+function FormActions({ onCancel, onSubmit, submitLabel }) {
+  return (
+    <div className="flex gap-3 pt-2">
+      <button
+        onClick={onCancel}
+        className="flex-1 py-3 rounded-xl border-2 border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50 transition-all"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={onSubmit}
+        className="flex-1 py-3 rounded-xl font-semibold text-sm text-white transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+        style={{ background: "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)" }}
+      >
+        {submitLabel}
+      </button>
+    </div>
+  );
+}
+
+// ─── Tenant Detail Modal ──────────────────────────────────────────────────────
+function BedTenantModal({ tenant, onClose }) {
+  if (!tenant) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full max-w-md max-h-[80vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
+          <h2 className="text-gray-900 font-bold text-lg">Tenant Details</h2>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 flex items-center justify-center text-white text-2xl font-bold">
+              {tenant.name?.[0]?.toUpperCase()}
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">{tenant.name}</h3>
+              <p className="text-gray-500 text-sm">{tenant.phone}</p>
+              {tenant.email && <p className="text-gray-400 text-xs">{tenant.email}</p>}
+            </div>
+          </div>
+          {tenant.fatherName && (
+            <div className="rounded-xl bg-gray-50 p-3">
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Father's Name</p>
+              <p className="text-gray-900 font-medium">{tenant.fatherName}</p>
+              {tenant.fatherPhone && <p className="text-gray-600 text-sm mt-1">{tenant.fatherPhone}</p>}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-gray-50 p-3">
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Joining Date</p>
+              <p className="text-gray-900 font-medium">{new Date(tenant.joiningDate).toLocaleDateString()}</p>
+            </div>
+            <div className="rounded-xl bg-gray-50 p-3">
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Monthly Rent</p>
+              <p className="text-gray-900 font-medium">₹{tenant.rentAmount}</p>
+            </div>
+          </div>
+          {tenant.permanentAddress && (
+            <div className="rounded-xl bg-gray-50 p-3">
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Address</p>
+              <p className="text-gray-900 text-sm">{tenant.permanentAddress}</p>
+            </div>
+          )}
+          {tenant.allocationInfo && (
+            <div className="rounded-xl bg-amber-50 p-3">
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Allocation</p>
+              <p className="text-gray-900 text-sm">
+                {tenant.allocationInfo.buildingName} - Floor {tenant.allocationInfo.floorNumber} - Room {tenant.allocationInfo.roomNumber} - Bed {tenant.allocationInfo.bedNumber}
+              </p>
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <a href={`tel:${tenant.phone}`} className="flex-1 text-center px-4 py-2 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-semibold transition-colors">📞 Call</a>
+            <button className="flex-1 px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold transition-colors">💬 WhatsApp</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Floor Selection Modal ────────────────────────────────────────────────────
+function FloorModal({ building, floors, onSelectFloor, onAddFloor, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white/95 backdrop-blur-sm">
+          <div>
+            <h2 className="text-gray-900 font-bold text-xl">Floors</h2>
+            <p className="text-gray-500 text-sm mt-0.5">{building.buildingName}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onAddFloor} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl text-sm font-semibold hover:shadow-md transition-all flex items-center gap-2">
+              <span>+</span> Add Floor
+            </button>
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
+          </div>
+        </div>
+        <div className="p-6">
+          {floors.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">🏗️</div>
+              <p className="text-gray-400 text-lg">No floors available</p>
+              <p className="text-gray-400 text-sm mt-1">Click "Add Floor" to create one</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[...floors].sort((a, c) => a.floorNumber - c.floorNumber).map((floor) => {
+                const totalRooms = floor.rooms?.length || 0;
+                const totalBeds = floor.rooms?.reduce((a, r) => a + (r.beds?.length || 0), 0) || 0;
+                return (
+                  <div key={floor._id} onClick={() => onSelectFloor(floor)} className="group p-5 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg cursor-pointer transition-all bg-white hover:scale-[1.02]">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl">🏢</span>
+                          <span className="font-bold text-gray-800 text-lg">Floor {floor.floorNumber}</span>
+                        </div>
+                        {floor.floorName && <p className="text-gray-500 text-sm mt-1">{floor.floorName}</p>}
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">{floor.floorNumber}</div>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <span className="text-xs px-3 py-1.5 bg-green-100 text-green-700 rounded-full font-medium">📍 {totalRooms} rooms</span>
+                      <span className="text-xs px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full font-medium">🛏️ {totalBeds} beds</span>
+                    </div>
+                    <div className="mt-3 text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Click to view rooms <span>→</span></div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Room Selection Modal ─────────────────────────────────────────────────────
+function RoomModal({ floor, rooms, onSelectRoom, onAddRoom, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white/95 backdrop-blur-sm">
+          <div>
+            <h2 className="text-gray-900 font-bold text-xl">Rooms</h2>
+            <p className="text-gray-500 text-sm mt-0.5">Floor {floor.floorNumber} {floor.floorName && `· ${floor.floorName}`}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onAddRoom} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl text-sm font-semibold hover:shadow-md transition-all flex items-center gap-2">
+              <span>+</span> Add Room
+            </button>
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
+          </div>
+        </div>
+        <div className="p-6">
+          {rooms.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">🚪</div>
+              <p className="text-gray-400 text-lg">No rooms available</p>
+              <p className="text-gray-400 text-sm mt-1">Click "Add Room" to create one</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {rooms.map((room) => {
+                const occupied = room.beds.filter((b) => b.status === "Occupied").length;
+                const occupancyRate = (occupied / room.beds.length) * 100;
+                return (
+                  <div key={room._id} onClick={() => onSelectRoom(room)} className="group p-5 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg cursor-pointer transition-all bg-white hover:scale-[1.02]">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">🚪</span>
+                        <span className="font-bold text-gray-800 text-lg">Room {room.roomNumber}</span>
+                      </div>
+                      <Badge className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-semibold">{room.shareType}-share</Badge>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 mt-4">
+                      {room.beds.map((bed) => (
+                        <div key={bed._id} className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-semibold transition-all ${bed.status === "Occupied" ? "bg-red-100 border-2 border-red-400 text-red-700" : "bg-green-100 border-2 border-green-400 text-green-700"}`}>
+                          <span className="text-lg">🛏️</span>
+                          <span>{bed.bedNumber}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex justify-between items-center">
+                      <span className="text-sm text-gray-500 font-medium">{occupied}/{room.beds.length} occupied</span>
+                      <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300" style={{ width: `${occupancyRate}%` }}></div>
+                      </div>
+                    </div>
+                    <div className="mt-3 text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Click to view beds <span>→</span></div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Bed Details Modal ────────────────────────────────────────────────────────
+function BedDetailsModal({ room, onSelectBed, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white/95 backdrop-blur-sm">
+          <div>
+            <h2 className="text-gray-900 font-bold text-xl">Beds</h2>
+            <p className="text-gray-500 text-sm mt-0.5">Room {room.roomNumber} · {room.shareType}-Share</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
+        </div>
+        <div className="p-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {room.beds.map((bed) => (
+              <div key={bed._id} onClick={() => bed.status === "Occupied" && onSelectBed(bed)} className={`group p-4 rounded-xl text-center cursor-pointer transition-all hover:scale-105 ${bed.status === "Occupied" ? "bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl" : "bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl"}`}>
+                <div className="text-4xl mb-2">🛏️</div>
+                <div className="font-bold text-lg">Bed {bed.bedNumber}</div>
+                <div className="text-xs mt-1 opacity-90 font-medium">{bed.status === "Occupied" ? "Occupied" : "Available"}</div>
+                {bed.status === "Occupied" && <div className="text-xs mt-2 opacity-80 group-hover:opacity-100 transition-opacity">Click to view tenant →</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Stats Cards ──────────────────────────────────────────────────────────────
+function StatsCards({ stats, selectedBuilding }) {
+return (
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    {/* Total Buildings Card */}
+    <div className="group relative overflow-hidden bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full -mr-16 -mt-16 opacity-10 group-hover:opacity-20 transition-opacity"></div>
+      <div className="relative p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center text-2xl">
+            🏢
+          </div>
+          <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-full">Total</span>
+        </div>
+        <div className="mb-2">
+          <span className="text-3xl font-bold text-gray-800">{stats.totalBuildings}</span>
+          <span className="text-gray-500 ml-1">buildings</span>
+        </div>
+        {selectedBuilding && (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-blue-600">✓</span>
+              <span className="text-gray-600 truncate">Selected: {selectedBuilding.buildingName}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* Total Floors Card */}
+    <div className="group relative overflow-hidden bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-green-500 rounded-full -mr-16 -mt-16 opacity-10 group-hover:opacity-20 transition-opacity"></div>
+      <div className="relative p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center text-2xl">
+            📊
+          </div>
+          <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full">Total</span>
+        </div>
+        <div className="mb-2">
+          <span className="text-3xl font-bold text-gray-800">{stats.totalFloors}</span>
+          <span className="text-gray-500 ml-1">floors</span>
+        </div>
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-500">Across all buildings</span>
+            <span className="text-green-600">↑ {Math.round(stats.totalFloors / stats.totalBuildings)} avg</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Total Rooms Card */}
+    <div className="group relative overflow-hidden bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500 rounded-full -mr-16 -mt-16 opacity-10 group-hover:opacity-20 transition-opacity"></div>
+      <div className="relative p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center text-2xl">
+            🚪
+          </div>
+          <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-full">Total</span>
+        </div>
+        <div className="mb-2">
+          <span className="text-3xl font-bold text-gray-800">{stats.totalRooms}</span>
+          <span className="text-gray-500 ml-1">rooms</span>
+        </div>
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-500">Available spaces</span>
+            <span className="text-purple-600">{Math.round(stats.totalRooms / stats.totalFloors)} rooms/floor</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Total Beds Card */}
+    <div className="group relative overflow-hidden bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500 rounded-full -mr-16 -mt-16 opacity-10 group-hover:opacity-20 transition-opacity"></div>
+      <div className="relative p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center text-2xl">
+            🛏️
+          </div>
+          <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-1 rounded-full">Capacity</span>
+        </div>
+        <div className="mb-2">
+          <span className="text-3xl font-bold text-gray-800">{stats.totalBeds}</span>
+          <span className="text-gray-500 ml-1">total beds</span>
+        </div>
+        
+        {/* Occupancy Progress Bar */}
+        <div className="mt-4">
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-gray-500">Occupancy</span>
+            <span className="font-semibold text-orange-600">
+              {Math.round((stats.occupiedBeds / stats.totalBeds) * 100)}%
+            </span>
+          </div>
+          <div className="w-full bg-orange-100 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-orange-500 to-orange-600 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${(stats.occupiedBeds / stats.totalBeds) * 100}%` }}
+            ></div>
+          </div>
+          <div className="mt-2 flex justify-between text-sm">
+            <span className="text-gray-600">
+              <span className="font-semibold">{stats.occupiedBeds}</span> occupied
+            </span>
+            <span className="text-gray-500">
+              {stats.totalBeds - stats.occupiedBeds} available
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function AddHostel() {
   const [buildings, setBuildings] = useState([]);
-  const [activeBuilding, setActiveBuilding] = useState(null);
-  const [activeFloor, setActiveFloor] = useState(null);
+  const [selectedBuilding, setSelectedBuilding] = useState(null);
+  const [selectedFloor, setSelectedFloor] = useState(null);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [selectedTenant, setSelectedTenant] = useState(null);
+  const [stats, setStats] = useState({ totalBuildings: 0, totalFloors: 0, totalRooms: 0, totalBeds: 0, occupiedBeds: 0 });
+  const [popupStack, setPopupStack] = useState([]);
   const { toast, show } = useToast();
 
   const [bForm, setBForm] = useState({ buildingName: "", address: "" });
@@ -19,14 +438,96 @@ export default function AddHostel() {
   const [showRModal, setShowRModal] = useState(false);
   const [editBuilding, setEditBuilding] = useState(null);
 
+  // ── Helpers ──
+  const computeStats = (buildingsData, filterBuilding = null) => {
+    const list = filterBuilding ? [filterBuilding] : buildingsData;
+    let totalFloors = 0, totalRooms = 0, totalBeds = 0, occupiedBeds = 0;
+    list.forEach((b) => {
+      totalFloors += b.floors?.length || 0;
+      b.floors?.forEach((f) => {
+        totalRooms += f.rooms?.length || 0;
+        f.rooms?.forEach((r) => {
+          totalBeds += r.beds?.length || 0;
+          occupiedBeds += r.beds?.filter((bed) => bed.status === "Occupied").length || 0;
+        });
+      });
+    });
+    return { totalBuildings: list.length, totalFloors, totalRooms, totalBeds, occupiedBeds };
+  };
+
   const fetchBuildings = async () => {
     const r = await fetch(`${API}/buildings`, { headers: authHeaders() });
     const d = await r.json();
-    setBuildings(Array.isArray(d) ? d : []);
+    const buildingsData = Array.isArray(d) ? d : [];
+    setBuildings(buildingsData);
+    // If a building is selected, update stats for that building (refresh its data too)
+    if (selectedBuilding) {
+      const fresh = buildingsData.find((b) => b._id === selectedBuilding._id);
+      if (fresh) {
+        setSelectedBuilding(fresh);
+        setStats(computeStats(buildingsData, fresh));
+      } else {
+        setStats(computeStats(buildingsData));
+      }
+    } else {
+      setStats(computeStats(buildingsData));
+    }
+    return buildingsData;
   };
 
   useEffect(() => { fetchBuildings(); }, []);
 
+  // ── Card click (NOT "Open Building") → select + update stats only ──
+  const handleCardClick = (building) => {
+    if (selectedBuilding?._id === building._id) {
+      // Deselect
+      setSelectedBuilding(null);
+      setSelectedFloor(null);
+      setSelectedRoom(null);
+      setStats(computeStats(buildings));
+    } else {
+      setSelectedBuilding(building);
+      setSelectedFloor(null);
+      setSelectedRoom(null);
+      setStats(computeStats(buildings, building));
+    }
+    // Close any open floor/room/bed popup
+    setPopupStack([]);
+  };
+
+  // ── "Open Building →" button → open floors popup ──
+  const handleBuildingSelect = (building) => {
+    setSelectedBuilding(building);
+    setSelectedFloor(null);
+    setSelectedRoom(null);
+    setStats(computeStats(buildings, building));
+    setPopupStack([{ type: "floors", building }]);
+  };
+
+  const handleFloorSelect = (floor) => {
+    setSelectedFloor(floor);
+    setSelectedRoom(null);
+    setPopupStack([{ type: "rooms", floor, building: selectedBuilding }]);
+  };
+
+  const handleRoomSelect = (room) => {
+    setSelectedRoom(room);
+    setPopupStack([{ type: "beds", room }]);
+  };
+
+  const handleBedSelect = async (bed) => {
+    if (bed.status === "Occupied" && bed.tenantId) {
+      try {
+        const r = await fetch(`${API}/tenants/${bed.tenantId}`, { headers: authHeaders() });
+        const tenant = await r.json();
+        if (r.ok) { setSelectedTenant(tenant); setPopupStack([]); }
+      } catch (error) { console.error("Error fetching tenant:", error); }
+    }
+  };
+
+  const closePopup = () => setPopupStack([]);
+
+  // ── CRUD ──
   const handleAddBuilding = async () => {
     if (!bForm.buildingName.trim()) return show("Building name required", "error");
     const url = editBuilding ? `${API}/buildings/${editBuilding._id}` : `${API}/buildings`;
@@ -44,237 +545,303 @@ export default function AddHostel() {
     const r = await fetch(`${API}/buildings/${id}`, { method: "DELETE", headers: authHeaders() });
     if (!r.ok) return show("Delete failed", "error");
     show("Building deleted");
-    if (activeBuilding?._id === id) { setActiveBuilding(null); setActiveFloor(null); }
+    if (selectedBuilding?._id === id) {
+      setSelectedBuilding(null); setSelectedFloor(null); setSelectedRoom(null);
+    }
     fetchBuildings();
   };
 
   const handleAddFloor = async () => {
     if (!fForm.floorNumber.toString().trim()) return show("Floor number required", "error");
-    const r = await fetch(`${API}/buildings/${activeBuilding._id}/floors`, {
+    const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors`, {
       method: "POST", headers: authHeaders(),
       body: JSON.stringify({ floorNumber: Number(fForm.floorNumber), floorName: fForm.floorName }),
     });
     const d = await r.json();
     if (!r.ok) return show(d.message, "error");
-    show("Floor added"); setFForm({ floorNumber: "", floorName: "" }); setShowFModal(false);
-    fetchBuildings(); setActiveBuilding(d.building);
+    show("Floor added");
+    setFForm({ floorNumber: "", floorName: "" }); setShowFModal(false);
+    const updated = await fetchBuildings();
+    const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
+    if (freshBuilding) {
+      setSelectedBuilding(freshBuilding);
+      setPopupStack([]);
+      setTimeout(() => setPopupStack([{ type: "floors", building: freshBuilding }]), 100);
+    }
   };
 
   const handleAddRoom = async () => {
     if (!rForm.roomNumber.trim()) return show("Room number required", "error");
-    const r = await fetch(`${API}/buildings/${activeBuilding._id}/floors/${activeFloor._id}/rooms`, {
+    const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms`, {
       method: "POST", headers: authHeaders(),
       body: JSON.stringify({ roomNumber: rForm.roomNumber, shareType: Number(rForm.shareType) }),
     });
     const d = await r.json();
     if (!r.ok) return show(d.message, "error");
-    show("Room added"); setRForm({ roomNumber: "", shareType: "2" }); setShowRModal(false);
-    fetchBuildings();
-    const upd = d.building;
-    setActiveBuilding(upd);
-    setActiveFloor(upd.floors.find((f) => f._id === activeFloor._id));
+    show("Room added");
+    setRForm({ roomNumber: "", shareType: "2" }); setShowRModal(false);
+    const updated = await fetchBuildings();
+    const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
+    if (freshBuilding) {
+      const freshFloor = freshBuilding.floors.find((f) => f._id === selectedFloor._id);
+      setSelectedBuilding(freshBuilding);
+      if (freshFloor) {
+        setSelectedFloor(freshFloor);
+        setPopupStack([]);
+        setTimeout(() => setPopupStack([{ type: "rooms", floor: freshFloor, building: freshBuilding }]), 100);
+      }
+    }
   };
 
-  const activeB = activeBuilding ? buildings.find((b) => b._id === activeBuilding._id) || activeBuilding : null;
-
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 960 }}>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <Toast toast={toast} />
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Properties</h1>
-          <p style={{ fontSize: 13, color: "var(--text-2)" }}>Manage buildings, floors and rooms</p>
+          <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Property Management
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">Manage buildings, floors, rooms and bed allocations</p>
         </div>
-        <Btn onClick={() => { setEditBuilding(null); setBForm({ buildingName: "", address: "" }); setShowBModal(true); }}>
-          + Building
-        </Btn>
+        <button
+          onClick={() => { setEditBuilding(null); setBForm({ buildingName: "", address: "" }); setShowBModal(true); }}
+          className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all hover:scale-105"
+        >
+          + New Building
+        </button>
       </div>
 
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", overflowX: "auto", paddingBottom: 8 }}>
-        {/* Buildings panel */}
-        <Panel title={`Buildings (${buildings.length})`}>
-          {buildings.length === 0 && <EmptyState text="No buildings yet" />}
-          {buildings.map((b) => {
-            const totalRooms = b.floors?.reduce((a, f) => a + f.rooms.length, 0) || 0;
-            const totalBeds = b.floors?.reduce((a, f) => a + f.rooms.reduce((x, r) => x + r.beds.length, 0), 0) || 0;
-            const isActive = activeB?._id === b._id;
-            return (
-              <div
-                key={b._id}
-                onClick={() => { setActiveBuilding(b); setActiveFloor(null); }}
-                style={{
-                  padding: "12px", borderRadius: "var(--radius)", marginBottom: 8,
-                  border: `1px solid ${isActive ? "var(--accent)" : "var(--border)"}`,
-                  background: isActive ? "var(--surface-2)" : "var(--bg)",
-                  cursor: "pointer", transition: "all 0.15s",
-                }}
+      {/* Stats */}
+      <StatsCards stats={stats} selectedBuilding={selectedBuilding} />
+
+      {/* Building Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {buildings.map((building) => {
+          const totalRooms = building.floors?.reduce((a, f) => a + f.rooms.length, 0) || 0;
+          const totalBeds = building.floors?.reduce((a, f) => a + f.rooms.reduce((x, r) => x + r.beds.length, 0), 0) || 0;
+          const isSelected = selectedBuilding?._id === building._id;
+
+          return (
+            <div
+              key={building._id}
+              onClick={() => handleCardClick(building)}
+              className={`relative p-5 rounded-xl transition-all cursor-pointer ${
+                isSelected
+                  ? "bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg scale-105"
+                  : "bg-white border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg"
+              }`}
+            >
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex-1">
+                  <h3 className={`font-bold text-lg ${isSelected ? "text-white" : "text-gray-800"}`}>
+                    {building.buildingName}
+                  </h3>
+                  {building.address && (
+                    <p className={`text-xs mt-1 ${isSelected ? "text-blue-100" : "text-gray-500"}`}>
+                      {building.address}
+                    </p>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    className={`p-1 rounded transition-colors ${isSelected ? "hover:bg-white/20 text-white" : "hover:bg-gray-100 text-gray-500"}`}
+                    onClick={(e) => { e.stopPropagation(); setEditBuilding(building); setBForm({ buildingName: building.buildingName, address: building.address || "" }); setShowBModal(true); }}
+                  >✎</button>
+                  <button
+                    className={`p-1 rounded transition-colors ${isSelected ? "hover:bg-white/20 text-white" : "hover:bg-red-100 text-red-500"}`}
+                    onClick={(e) => { e.stopPropagation(); handleDeleteBuilding(building._id); }}
+                  >✕</button>
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-3 flex-wrap">
+                <span className={`text-xs px-2 py-1 rounded-full ${isSelected ? "bg-white/20 text-white" : "bg-blue-100 text-blue-700"}`}>{building.floors?.length || 0} floors</span>
+                <span className={`text-xs px-2 py-1 rounded-full ${isSelected ? "bg-white/20 text-white" : "bg-green-100 text-green-700"}`}>{totalRooms} rooms</span>
+                <span className={`text-xs px-2 py-1 rounded-full ${isSelected ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700"}`}>{totalBeds} beds</span>
+              </div>
+
+              {/* Open Building button — stops propagation so card click doesn't fire */}
+              <button
+                onClick={(e) => { e.stopPropagation(); handleBuildingSelect(building); }}
+                className={`mt-4 w-full py-2 rounded-lg font-medium transition-all ${
+                  isSelected
+                    ? "bg-white/20 text-white hover:bg-white/30"
+                    : "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700"
+                }`}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{b.buildingName}</div>
-                    {b.address && <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.address}</div>}
-                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                      <Badge>{b.floors?.length || 0} floors</Badge>
-                      <Badge>{totalRooms} rooms</Badge>
-                      <Badge>{totalBeds} beds</Badge>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-                    <button style={iconBtn} onClick={(e) => { e.stopPropagation(); setEditBuilding(b); setBForm({ buildingName: b.buildingName, address: b.address || "" }); setShowBModal(true); }}>✎</button>
-                    <button style={{ ...iconBtn, color: "var(--red)" }} onClick={(e) => { e.stopPropagation(); handleDeleteBuilding(b._id); }}>✕</button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </Panel>
+                {isSelected ? "Open Building" : "Open Building →"}
+              </button>
 
-        {/* Floors panel */}
-        {activeB && (
-          <Panel title={`Floors — ${activeB.buildingName}`} action={<Btn variant="ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => setShowFModal(true)}>+ Floor</Btn>}>
-            {activeB.floors?.length === 0 && <EmptyState text="No floors. Add one." />}
-            {[...activeB.floors].sort((a, c) => a.floorNumber - c.floorNumber).map((f) => {
-              const isActive = activeFloor?._id === f._id;
-              return (
-                <div
-                  key={f._id}
-                  onClick={() => setActiveFloor(f)}
-                  style={{
-                    padding: "12px", borderRadius: "var(--radius)", marginBottom: 8,
-                    border: `1px solid ${isActive ? "var(--accent)" : "var(--border)"}`,
-                    background: isActive ? "var(--surface-2)" : "var(--bg)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
-                    Floor {f.floorNumber}{f.floorName ? ` — ${f.floorName}` : ""}
-                  </div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <Badge>{f.rooms.length} rooms</Badge>
-                    <Badge>{f.rooms.reduce((a, r) => a + r.beds.length, 0)} beds</Badge>
-                  </div>
+              {isSelected && (
+                <div className="absolute top-2 right-2">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                 </div>
-              );
-            })}
-          </Panel>
-        )}
-
-        {/* Rooms panel */}
-        {activeFloor && (
-          <Panel title={`Rooms — Floor ${activeFloor.floorNumber}`} action={<Btn variant="ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => setShowRModal(true)}>+ Room</Btn>}>
-            {activeFloor.rooms.length === 0 && <EmptyState text="No rooms. Add one." />}
-            {activeFloor.rooms.map((r) => {
-              const occupied = r.beds.filter((b) => b.status === "Occupied").length;
-              return (
-                <div key={r._id} style={{ padding: 12, border: "1px solid var(--border)", borderRadius: "var(--radius)", marginBottom: 8, background: "var(--bg)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>Room {r.roomNumber}</span>
-                    <Badge>{r.shareType}-share</Badge>
-                  </div>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
-                    {r.beds.map((bed) => (
-                      <div key={bed._id} style={{
-                        width: 30, height: 30, borderRadius: 4,
-                        background: bed.status === "Occupied" ? "var(--red-bg)" : "var(--green-bg)",
-                        border: `1px solid ${bed.status === "Occupied" ? "#fca5a5" : "#86efac"}`,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 10, fontWeight: 600,
-                        color: bed.status === "Occupied" ? "var(--red)" : "var(--green)",
-                      }}>
-                        {bed.bedNumber}
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text-3)" }}>{occupied}/{r.beds.length} occupied</div>
-                </div>
-              );
-            })}
-          </Panel>
-        )}
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Building Modal */}
-      <Modal open={showBModal} onClose={() => setShowBModal(false)} title={editBuilding ? "Edit Building" : "Add Building"}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div>
-            <label style={lblStyle}>Building Name *</label>
-            <input style={inputStyle} value={bForm.buildingName} onChange={(e) => setBForm({ ...bForm, buildingName: e.target.value })} placeholder="e.g. Block A" autoFocus />
-          </div>
-          <div>
-            <label style={lblStyle}>Address</label>
-            <input style={inputStyle} value={bForm.address} onChange={(e) => setBForm({ ...bForm, address: e.target.value })} placeholder="Full address" />
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-            <Btn variant="secondary" onClick={() => setShowBModal(false)}>Cancel</Btn>
-            <Btn onClick={handleAddBuilding}>{editBuilding ? "Update" : "Add Building"}</Btn>
-          </div>
+      {/* ── Add / Edit Building Modal ── */}
+      <FormModal
+        open={showBModal}
+        onClose={() => setShowBModal(false)}
+        title={editBuilding ? "Edit Building" : "Add Building"}
+        subtitle={editBuilding ? `Editing: ${editBuilding.buildingName}` : "Create a new property"}
+        icon={editBuilding ? "✎" : "🏢"}
+      >
+        <div className="space-y-5">
+          <FormField label="Building Name" required>
+            <input
+              className={fieldStyle}
+              value={bForm.buildingName}
+              onChange={(e) => setBForm({ ...bForm, buildingName: e.target.value })}
+              placeholder="e.g. Block A, Sunrise PG"
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && handleAddBuilding()}
+            />
+          </FormField>
+          <FormField label="Address">
+            <input
+              className={fieldStyle}
+              value={bForm.address}
+              onChange={(e) => setBForm({ ...bForm, address: e.target.value })}
+              placeholder="Full address (optional)"
+            />
+          </FormField>
+          <FormActions
+            onCancel={() => setShowBModal(false)}
+            onSubmit={handleAddBuilding}
+            submitLabel={editBuilding ? "Update Building" : "Add Building"}
+          />
         </div>
-      </Modal>
+      </FormModal>
 
-      {/* Floor Modal */}
-      <Modal open={showFModal} onClose={() => setShowFModal(false)} title={`Add Floor — ${activeB?.buildingName}`}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div>
-            <label style={lblStyle}>Floor Number *</label>
-            <input style={inputStyle} type="number" value={fForm.floorNumber} onChange={(e) => setFForm({ ...fForm, floorNumber: e.target.value })} placeholder="e.g. 1" autoFocus />
+      {/* ── Add Floor Modal ── */}
+      {selectedBuilding && (
+        <FormModal
+          open={showFModal}
+          onClose={() => setShowFModal(false)}
+          title="Add Floor"
+          subtitle={selectedBuilding.buildingName}
+          icon="📐"
+        >
+          <div className="space-y-5">
+            <FormField label="Floor Number" required>
+              <input
+                className={fieldStyle}
+                type="number"
+                value={fForm.floorNumber}
+                onChange={(e) => setFForm({ ...fForm, floorNumber: e.target.value })}
+                placeholder="e.g. 1"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && handleAddFloor()}
+              />
+            </FormField>
+            <FormField label="Floor Name">
+              <input
+                className={fieldStyle}
+                value={fForm.floorName}
+                onChange={(e) => setFForm({ ...fForm, floorName: e.target.value })}
+                placeholder="e.g. Ground Floor (optional)"
+              />
+            </FormField>
+            <FormActions onCancel={() => setShowFModal(false)} onSubmit={handleAddFloor} submitLabel="Add Floor" />
           </div>
-          <div>
-            <label style={lblStyle}>Floor Name (optional)</label>
-            <input style={inputStyle} value={fForm.floorName} onChange={(e) => setFForm({ ...fForm, floorName: e.target.value })} placeholder="e.g. Ground Floor" />
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-            <Btn variant="secondary" onClick={() => setShowFModal(false)}>Cancel</Btn>
-            <Btn onClick={handleAddFloor}>Add Floor</Btn>
-          </div>
-        </div>
-      </Modal>
+        </FormModal>
+      )}
 
-      {/* Room Modal */}
-      <Modal open={showRModal} onClose={() => setShowRModal(false)} title={`Add Room — Floor ${activeFloor?.floorNumber}`}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div>
-            <label style={lblStyle}>Room Number *</label>
-            <input style={inputStyle} value={rForm.roomNumber} onChange={(e) => setRForm({ ...rForm, roomNumber: e.target.value })} placeholder="e.g. 101" autoFocus />
-          </div>
-          <div>
-            <label style={lblStyle}>Share Type *</label>
-            <select style={inputStyle} value={rForm.shareType} onChange={(e) => setRForm({ ...rForm, shareType: e.target.value })}>
-              {SHARE_OPTIONS.map((n) => <option key={n} value={n}>{n} Share ({n} Bed{n > 1 ? "s" : ""})</option>)}
-            </select>
-          </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {Array.from({ length: Number(rForm.shareType) }, (_, i) => (
-              <div key={i} style={{ width: 28, height: 28, borderRadius: 4, background: "var(--green-bg)", border: "1px solid #86efac", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600, color: "var(--green)" }}>
-                {i + 1}
+      {/* ── Add Room Modal ── */}
+      {selectedFloor && (
+        <FormModal
+          open={showRModal}
+          onClose={() => setShowRModal(false)}
+          title="Add Room"
+          subtitle={`Floor ${selectedFloor.floorNumber}${selectedFloor.floorName ? ` · ${selectedFloor.floorName}` : ""}`}
+          icon="🚪"
+        >
+          <div className="space-y-5">
+            <FormField label="Room Number" required>
+              <input
+                className={fieldStyle}
+                value={rForm.roomNumber}
+                onChange={(e) => setRForm({ ...rForm, roomNumber: e.target.value })}
+                placeholder="e.g. 101"
+                autoFocus
+              />
+            </FormField>
+            <FormField label="Share Type" required>
+              <select
+                className={fieldStyle}
+                value={rForm.shareType}
+                onChange={(e) => setRForm({ ...rForm, shareType: e.target.value })}
+              >
+                {SHARE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>{n} Share ({n} Bed{n > 1 ? "s" : ""})</option>
+                ))}
+              </select>
+            </FormField>
+            {/* Bed preview */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Bed Preview</p>
+              <div className="flex gap-2 flex-wrap">
+                {Array.from({ length: Number(rForm.shareType) }, (_, i) => (
+                  <div key={i} className="w-11 h-11 rounded-xl bg-gradient-to-br from-green-400 to-green-600 flex flex-col items-center justify-center text-white shadow-sm">
+                    <span className="text-base leading-none">🛏️</span>
+                    <span className="text-xs font-bold mt-0.5">{i + 1}</span>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+            <FormActions onCancel={() => setShowRModal(false)} onSubmit={handleAddRoom} submitLabel="Add Room" />
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-            <Btn variant="secondary" onClick={() => setShowRModal(false)}>Cancel</Btn>
-            <Btn onClick={handleAddRoom}>Add Room</Btn>
-          </div>
-        </div>
-      </Modal>
+        </FormModal>
+      )}
+
+      {/* ── Popup Stack ── */}
+      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "floors" && (
+        <FloorModal
+          building={selectedBuilding}
+          floors={selectedBuilding?.floors || []}
+          onSelectFloor={handleFloorSelect}
+          onAddFloor={() => setShowFModal(true)}
+          onClose={closePopup}
+        />
+      )}
+      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "rooms" && (
+        <RoomModal
+          floor={selectedFloor}
+          rooms={selectedFloor?.rooms || []}
+          onSelectRoom={handleRoomSelect}
+          onAddRoom={() => setShowRModal(true)}
+          onClose={closePopup}
+        />
+      )}
+      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "beds" && (
+        <BedDetailsModal room={selectedRoom} onSelectBed={handleBedSelect} onClose={closePopup} />
+      )}
+
+      {/* Tenant Details */}
+      {selectedTenant && <BedTenantModal tenant={selectedTenant} onClose={() => setSelectedTenant(null)} />}
     </div>
   );
 }
 
-function Panel({ title, children, action }) {
-  return (
-    <div style={{ minWidth: 260, flex: "0 0 260px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <h3 style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{title}</h3>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function EmptyState({ text }) {
-  return <p style={{ fontSize: 12, color: "var(--text-3)", textAlign: "center", padding: "20px 0" }}>{text}</p>;
-}
-
-const iconBtn = { background: "transparent", border: "none", cursor: "pointer", fontSize: 14, color: "var(--text-3)", padding: "2px 4px", borderRadius: 4 };
-const lblStyle = { display: "block", fontSize: 12, color: "var(--text-2)", marginBottom: 5, fontWeight: 500 };
+// ─── Animation styles ─────────────────────────────────────────────────────────
+const style = document.createElement("style");
+style.textContent = `
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(50px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes modalPop {
+    from { opacity: 0; transform: scale(0.93) translateY(16px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .animate-slideUp  { animation: slideUp  0.3s ease-out; }
+  .animate-modalPop { animation: modalPop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+`;
+document.head.appendChild(style);

@@ -10,6 +10,10 @@ export const getUser    = ()          => {
   try { return JSON.parse(sessionStorage.getItem("user") ?? "null"); }
   catch { return null; }
 };
+
+export const authHeadersMultipart = () => ({
+  Authorization: `Bearer ${sessionStorage.getItem("token")}`,
+});
 export const setSession = (token, user) => {
   sessionStorage.setItem("token", token);
   sessionStorage.setItem("user",  JSON.stringify(user));

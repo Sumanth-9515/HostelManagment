@@ -8,6 +8,7 @@ const Sidebar = () => {
     { name: "Add Hostel", path: "/addhostel", icon: "🏗️" },
     { name: "Add Candidate", path: "/addcandidate", icon: "👥" },
     { name: "Overview", path: "/overview", icon: "📊" }
+    
   ];
 
   return (

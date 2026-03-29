@@ -2,16 +2,11 @@
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    // This tells Tailwind to scan ALL files in ALL folders inside src/
+    "./src/**/*.{js,ts,jsx,tsx}", 
   ],
   theme: {
-    extend: {
-      colors: {
-        primary: '#3b82f6', // Blue accent
-        dark: '#0f172a',    // Slate 900
-        card: '#1e293b',    // Slate 800
-      },
-    },
+    extend: {},
   },
   plugins: [],
 }

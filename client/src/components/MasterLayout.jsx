@@ -4,6 +4,7 @@ import { clearSession } from "./ui.jsx";
 const NAV = [
   { to: "/master/dashboard", label: "Overview" },
   { to: "/master/users",     label: "Users"    },
+  { to: "/master/logins",    label: "Logins"   }
 ];
 
 export default function MasterLayout({ children }) {

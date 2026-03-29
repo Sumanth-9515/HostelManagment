@@ -18,6 +18,8 @@ import TenantRegisterPage from "./pages/TenantRegisterPage.jsx";
 // Layouts
 import Layout             from "./components/Layout";
 import MasterLayout       from "./components/MasterLayout";
+import RentManagement from "./pages/Rentmanagement.jsx";
+import ManageLogins from "./pages/master/Managelogins.jsx";
 
 // ── Auth guards ───────────────────────────────────────────────────────────────
 function RequireUser({ children }) {
@@ -62,6 +64,9 @@ export default function App() {
       <Route path="/addcandidate" element={
         <RequireUser><Layout><AddCandidate /></Layout></RequireUser>
       } />
+    <Route path="/rent-management" element={
+        <RequireUser><Layout><RentManagement/></Layout></RequireUser>
+      } />
 
       {/* ── Master routes wrapped in MasterLayout ──────────────────────── */}
       <Route path="/master/dashboard" element={
@@ -69,6 +74,9 @@ export default function App() {
       } />
       <Route path="/master/users" element={
         <RequireMaster><MasterLayout><MasterUsers /></MasterLayout></RequireMaster>
+      } />
+          <Route path="/master/logins" element={
+        <RequireMaster><MasterLayout><ManageLogins /></MasterLayout></RequireMaster>
       } />
 
       {/* ── Fallback ───────────────────────────────────────────────────── */}
