@@ -2,7 +2,7 @@ import express from "express";
 import User from "../models/User.js";
 import Building from "../models/Building.js";
 import Tenant from "../models/Tenant.js";
-import RentPayment from "../models/RentPayment.js";
+import RentPayment from "../models/Rentpayment.js";
 import jwt from "jsonwebtoken";
 
 const router = express.Router();

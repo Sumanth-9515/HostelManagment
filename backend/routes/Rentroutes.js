@@ -10,7 +10,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
-import RentPayment from "../models/RentPayment.js";
+import RentPayment from "../models/Rentpayment.js";
 
 const router = express.Router();
 
