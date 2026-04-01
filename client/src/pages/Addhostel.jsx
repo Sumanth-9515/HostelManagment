@@ -150,7 +150,7 @@ function BedTenantModal({ tenant, onClose }) {
 }
 
 // ─── Floor Selection Modal ────────────────────────────────────────────────────
-function FloorModal({ building, floors, onSelectFloor, onAddFloor, onClose }) {
+function FloorModal({ building, floors, onSelectFloor, onAddFloor, onEditFloor, onDeleteFloor, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
@@ -178,25 +178,58 @@ function FloorModal({ building, floors, onSelectFloor, onAddFloor, onClose }) {
               {[...floors].sort((a, c) => a.floorNumber - c.floorNumber).map((floor) => {
                 const totalRooms = floor.rooms?.length || 0;
                 const totalBeds = floor.rooms?.reduce((a, r) => a + (r.beds?.length || 0), 0) || 0;
-                return (
-                  <div key={floor._id} onClick={() => onSelectFloor(floor)} className="group p-5 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg cursor-pointer transition-all bg-white hover:scale-[1.02]">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl">🏢</span>
-                          <span className="font-bold text-gray-800 text-lg">Floor {floor.floorNumber}</span>
-                        </div>
-                        {floor.floorName && <p className="text-gray-500 text-sm mt-1">{floor.floorName}</p>}
-                      </div>
-                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">{floor.floorNumber}</div>
-                    </div>
-                    <div className="flex gap-2 mt-4">
-                      <span className="text-xs px-3 py-1.5 bg-green-100 text-green-700 rounded-full font-medium">📍 {totalRooms} rooms</span>
-                      <span className="text-xs px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full font-medium">🛏️ {totalBeds} beds</span>
-                    </div>
-                    <div className="mt-3 text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Click to view rooms <span>→</span></div>
-                  </div>
-                );
+            return (
+  <div key={floor._id} className="group relative p-5 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg transition-all bg-white">
+    {/* Edit / Delete buttons */}
+    <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+      <button
+        title="Edit floor"
+        onClick={(e) => { e.stopPropagation(); onEditFloor(floor); }}
+        className="w-7 h-7 flex items-center justify-center rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 text-sm transition-colors"
+      >✎</button>
+      <button
+        title="Delete floor"
+        onClick={(e) => { e.stopPropagation(); onDeleteFloor(floor._id); }}
+        className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-sm transition-colors"
+      >🗑</button>
+    </div>
+
+    {/* Card content — click opens rooms */}
+    <div onClick={() => onSelectFloor(floor)} className="cursor-pointer">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div>
+            <h3 className="font-bold text-gray-800 text-lg">Floor {floor.floorNumber}</h3>
+            {floor.floorName && (
+              <p className="text-gray-500 text-sm mt-0.5">{floor.floorName}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-3xl">🏢</span>
+        </div>
+      </div>
+      
+      <div className="flex flex-wrap gap-2 mt-3 mb-3">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-lg">
+          <span className="text-blue-600 text-sm">🚪</span>
+          <span className="text-sm font-medium text-gray-700">{totalRooms} {totalRooms === 1 ? 'room' : 'rooms'}</span>
+        </div>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 rounded-lg">
+          <span className="text-purple-600 text-sm">🛏️</span>
+          <span className="text-sm font-medium text-gray-700">{totalBeds} {totalBeds === 1 ? 'bed' : 'beds'}</span>
+        </div>
+      </div>
+      
+      <div className="mt-4 pt-3 border-t border-gray-100">
+        <div className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 font-medium">
+          Click to view rooms 
+          <span className="transform group-hover:translate-x-1 transition-transform">→</span>
+        </div>
+      </div>
+    </div>
+  </div>
+);
               })}
             </div>
           )}
@@ -207,7 +240,7 @@ function FloorModal({ building, floors, onSelectFloor, onAddFloor, onClose }) {
 }
 
 // ─── Room Selection Modal ─────────────────────────────────────────────────────
-function RoomModal({ floor, rooms, onSelectRoom, onAddRoom, onClose }) {
+function RoomModal({ floor, rooms, onSelectRoom, onAddRoom, onEditRoom, onDeleteRoom, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div className="relative w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
@@ -236,29 +269,46 @@ function RoomModal({ floor, rooms, onSelectRoom, onAddRoom, onClose }) {
                 const occupied = room.beds.filter((b) => b.status === "Occupied").length;
                 const occupancyRate = (occupied / room.beds.length) * 100;
                 return (
-                  <div key={room._id} onClick={() => onSelectRoom(room)} className="group p-5 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg cursor-pointer transition-all bg-white hover:scale-[1.02]">
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">🚪</span>
-                        <span className="font-bold text-gray-800 text-lg">Room {room.roomNumber}</span>
-                      </div>
-                      <Badge className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-semibold">{room.shareType}-share</Badge>
+                  <div key={room._id} className="group relative p-5 rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg transition-all bg-white">
+                    {/* Edit / Delete buttons */}
+                    <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <button
+                        title="Edit room"
+                        onClick={(e) => { e.stopPropagation(); onEditRoom(room); }}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 text-sm transition-colors"
+                      >✎</button>
+                      <button
+                        title="Delete room"
+                        onClick={(e) => { e.stopPropagation(); onDeleteRoom(room._id); }}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-sm transition-colors"
+                      >🗑</button>
                     </div>
-                    <div className="grid grid-cols-4 gap-2 mt-4">
-                      {room.beds.map((bed) => (
-                        <div key={bed._id} className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-semibold transition-all ${bed.status === "Occupied" ? "bg-red-100 border-2 border-red-400 text-red-700" : "bg-green-100 border-2 border-green-400 text-green-700"}`}>
-                          <span className="text-lg">🛏️</span>
-                          <span>{bed.bedNumber}</span>
+
+                    {/* Card content — click opens beds */}
+                    <div onClick={() => onSelectRoom(room)} className="cursor-pointer pr-16">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl">🚪</span>
+                          <span className="font-bold text-gray-800 text-lg">Room {room.roomNumber}</span>
                         </div>
-                      ))}
-                    </div>
-                    <div className="mt-4 flex justify-between items-center">
-                      <span className="text-sm text-gray-500 font-medium">{occupied}/{room.beds.length} occupied</span>
-                      <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300" style={{ width: `${occupancyRate}%` }}></div>
+                        <Badge className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-semibold">{room.shareType}-share</Badge>
                       </div>
+                      <div className="grid grid-cols-4 gap-2 mt-4">
+                        {room.beds.map((bed) => (
+                          <div key={bed._id} className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-semibold transition-all ${bed.status === "Occupied" ? "bg-red-100 border-2 border-red-400 text-red-700" : "bg-green-100 border-2 border-green-400 text-green-700"}`}>
+                            <span className="text-lg">🛏️</span>
+                            <span>{bed.bedNumber}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 flex justify-between items-center">
+                        <span className="text-sm text-gray-500 font-medium">{occupied}/{room.beds.length} occupied</span>
+                        <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300" style={{ width: `${occupancyRate}%` }}></div>
+                        </div>
+                      </div>
+                      <div className="mt-3 text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Click to view beds <span>→</span></div>
                     </div>
-                    <div className="mt-3 text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">Click to view beds <span>→</span></div>
                   </div>
                 );
               })}
@@ -271,7 +321,7 @@ function RoomModal({ floor, rooms, onSelectRoom, onAddRoom, onClose }) {
 }
 
 // ─── Bed Details Modal ────────────────────────────────────────────────────────
-function BedDetailsModal({ room, onSelectBed, onClose }) {
+function BedDetailsModal({ room, onSelectBed, onAddBed, onRemoveBed, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
@@ -280,19 +330,47 @@ function BedDetailsModal({ room, onSelectBed, onClose }) {
             <h2 className="text-gray-900 font-bold text-xl">Beds</h2>
             <p className="text-gray-500 text-sm mt-0.5">Room {room.roomNumber} · {room.shareType}-Share</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
+          <div className="flex gap-2 items-center">
+            <button
+              onClick={onAddBed}
+              title="Add a bed"
+              className="px-3 py-1.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl text-sm font-semibold hover:shadow-md transition-all flex items-center gap-1"
+            >
+              <span>+</span> Add Bed
+            </button>
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
+          </div>
         </div>
         <div className="p-6">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {room.beds.map((bed) => (
-              <div key={bed._id} onClick={() => bed.status === "Occupied" && onSelectBed(bed)} className={`group p-4 rounded-xl text-center cursor-pointer transition-all hover:scale-105 ${bed.status === "Occupied" ? "bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl" : "bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl"}`}>
+              <div
+                key={bed._id}
+                className={`group relative p-4 rounded-xl text-center transition-all hover:scale-105 ${
+                  bed.status === "Occupied"
+                    ? "bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl cursor-pointer"
+                    : "bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl"
+                }`}
+                onClick={() => bed.status === "Occupied" && onSelectBed(bed)}
+              >
+                {/* Remove button — only for available beds */}
+                {bed.status === "Available" && (
+                  <button
+                    title="Remove this bed"
+                    onClick={(e) => { e.stopPropagation(); onRemoveBed(bed); }}
+                    className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-white/30 hover:bg-red-200 hover:text-red-700 text-white text-xs opacity-0 group-hover:opacity-100 transition-all"
+                  >✕</button>
+                )}
                 <div className="text-4xl mb-2">🛏️</div>
                 <div className="font-bold text-lg">Bed {bed.bedNumber}</div>
                 <div className="text-xs mt-1 opacity-90 font-medium">{bed.status === "Occupied" ? "Occupied" : "Available"}</div>
-                {bed.status === "Occupied" && <div className="text-xs mt-2 opacity-80 group-hover:opacity-100 transition-opacity">Click to view tenant →</div>}
+                {bed.status === "Occupied" && (
+                  <div className="text-xs mt-2 opacity-80 group-hover:opacity-100 transition-opacity">Click to view tenant →</div>
+                )}
               </div>
             ))}
           </div>
+          <p className="text-center text-xs text-gray-400 mt-4">Hover a bed to see options · Click occupied bed to view tenant</p>
         </div>
       </div>
     </div>
@@ -437,6 +515,8 @@ export default function AddHostel() {
   const [showFModal, setShowFModal] = useState(false);
   const [showRModal, setShowRModal] = useState(false);
   const [editBuilding, setEditBuilding] = useState(null);
+  const [editFloor, setEditFloor] = useState(null);   // null = add mode, object = edit mode
+  const [editRoom, setEditRoom] = useState(null);     // null = add mode, object = edit mode
 
   // ── Helpers ──
   const computeStats = (buildingsData, filterBuilding = null) => {
@@ -460,7 +540,6 @@ export default function AddHostel() {
     const d = await r.json();
     const buildingsData = Array.isArray(d) ? d : [];
     setBuildings(buildingsData);
-    // If a building is selected, update stats for that building (refresh its data too)
     if (selectedBuilding) {
       const fresh = buildingsData.find((b) => b._id === selectedBuilding._id);
       if (fresh) {
@@ -480,7 +559,6 @@ export default function AddHostel() {
   // ── Card click (NOT "Open Building") → select + update stats only ──
   const handleCardClick = (building) => {
     if (selectedBuilding?._id === building._id) {
-      // Deselect
       setSelectedBuilding(null);
       setSelectedFloor(null);
       setSelectedRoom(null);
@@ -491,7 +569,6 @@ export default function AddHostel() {
       setSelectedRoom(null);
       setStats(computeStats(buildings, building));
     }
-    // Close any open floor/room/bed popup
     setPopupStack([]);
   };
 
@@ -527,7 +604,52 @@ export default function AddHostel() {
 
   const closePopup = () => setPopupStack([]);
 
-  // ── CRUD ──
+  // ── Helper: refresh and re-open floors popup ──
+  const refreshAndReopenFloors = async () => {
+    const updated = await fetchBuildings();
+    const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
+    if (freshBuilding) {
+      setSelectedBuilding(freshBuilding);
+      setPopupStack([]);
+      setTimeout(() => setPopupStack([{ type: "floors", building: freshBuilding }]), 100);
+    }
+  };
+
+  // ── Helper: refresh and re-open rooms popup ──
+  const refreshAndReopenRooms = async () => {
+    const updated = await fetchBuildings();
+    const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
+    if (freshBuilding) {
+      const freshFloor = freshBuilding.floors.find((f) => f._id === selectedFloor._id);
+      setSelectedBuilding(freshBuilding);
+      if (freshFloor) {
+        setSelectedFloor(freshFloor);
+        setPopupStack([]);
+        setTimeout(() => setPopupStack([{ type: "rooms", floor: freshFloor, building: freshBuilding }]), 100);
+      }
+    }
+  };
+
+  // ── Helper: refresh and re-open beds popup ──
+  const refreshAndReopenBeds = async () => {
+    const updated = await fetchBuildings();
+    const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
+    if (freshBuilding) {
+      const freshFloor = freshBuilding.floors.find((f) => f._id === selectedFloor._id);
+      if (freshFloor) {
+        const freshRoom = freshFloor.rooms.find((r) => r._id === selectedRoom._id);
+        setSelectedBuilding(freshBuilding);
+        setSelectedFloor(freshFloor);
+        if (freshRoom) {
+          setSelectedRoom(freshRoom);
+          setPopupStack([]);
+          setTimeout(() => setPopupStack([{ type: "beds", room: freshRoom }]), 100);
+        }
+      }
+    }
+  };
+
+  // ── CRUD: Building ──
   const handleAddBuilding = async () => {
     if (!bForm.buildingName.trim()) return show("Building name required", "error");
     const url = editBuilding ? `${API}/buildings/${editBuilding._id}` : `${API}/buildings`;
@@ -551,46 +673,106 @@ export default function AddHostel() {
     fetchBuildings();
   };
 
+  // ── CRUD: Floor ──
   const handleAddFloor = async () => {
     if (!fForm.floorNumber.toString().trim()) return show("Floor number required", "error");
-    const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors`, {
-      method: "POST", headers: authHeaders(),
-      body: JSON.stringify({ floorNumber: Number(fForm.floorNumber), floorName: fForm.floorName }),
-    });
+
+    let r;
+    if (editFloor) {
+      // Edit existing floor
+      r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${editFloor._id}`, {
+        method: "PUT", headers: authHeaders(),
+        body: JSON.stringify({ floorNumber: Number(fForm.floorNumber), floorName: fForm.floorName }),
+      });
+    } else {
+      // Add new floor
+      r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors`, {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ floorNumber: Number(fForm.floorNumber), floorName: fForm.floorName }),
+      });
+    }
+
     const d = await r.json();
     if (!r.ok) return show(d.message, "error");
-    show("Floor added");
-    setFForm({ floorNumber: "", floorName: "" }); setShowFModal(false);
-    const updated = await fetchBuildings();
-    const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
-    if (freshBuilding) {
-      setSelectedBuilding(freshBuilding);
-      setPopupStack([]);
-      setTimeout(() => setPopupStack([{ type: "floors", building: freshBuilding }]), 100);
-    }
+    show(editFloor ? "Floor updated" : "Floor added");
+    setFForm({ floorNumber: "", floorName: "" }); setEditFloor(null); setShowFModal(false);
+    await refreshAndReopenFloors();
   };
 
-  const handleAddRoom = async () => {
-    if (!rForm.roomNumber.trim()) return show("Room number required", "error");
-    const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms`, {
-      method: "POST", headers: authHeaders(),
-      body: JSON.stringify({ roomNumber: rForm.roomNumber, shareType: Number(rForm.shareType) }),
+  const handleDeleteFloor = async (floorId) => {
+    if (!window.confirm("Delete this floor and all its rooms/beds?")) return;
+    const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${floorId}`, {
+      method: "DELETE", headers: authHeaders(),
     });
     const d = await r.json();
     if (!r.ok) return show(d.message, "error");
-    show("Room added");
-    setRForm({ roomNumber: "", shareType: "2" }); setShowRModal(false);
-    const updated = await fetchBuildings();
-    const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
-    if (freshBuilding) {
-      const freshFloor = freshBuilding.floors.find((f) => f._id === selectedFloor._id);
-      setSelectedBuilding(freshBuilding);
-      if (freshFloor) {
-        setSelectedFloor(freshFloor);
-        setPopupStack([]);
-        setTimeout(() => setPopupStack([{ type: "rooms", floor: freshFloor, building: freshBuilding }]), 100);
-      }
+    show("Floor deleted");
+    await refreshAndReopenFloors();
+  };
+
+  // ── CRUD: Room ──
+  const handleAddRoom = async () => {
+    if (!rForm.roomNumber.trim()) return show("Room number required", "error");
+
+    let r;
+    if (editRoom) {
+      // Edit existing room
+      r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms/${editRoom._id}`, {
+        method: "PUT", headers: authHeaders(),
+        body: JSON.stringify({ roomNumber: rForm.roomNumber, shareType: Number(rForm.shareType) }),
+      });
+    } else {
+      // Add new room
+      r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms`, {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ roomNumber: rForm.roomNumber, shareType: Number(rForm.shareType) }),
+      });
     }
+
+    const d = await r.json();
+    if (!r.ok) return show(d.message, "error");
+    show(editRoom ? "Room updated" : "Room added");
+    setRForm({ roomNumber: "", shareType: "2" }); setEditRoom(null); setShowRModal(false);
+    await refreshAndReopenRooms();
+  };
+
+  const handleDeleteRoom = async (roomId) => {
+    if (!window.confirm("Delete this room and all its beds?")) return;
+    const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms/${roomId}`, {
+      method: "DELETE", headers: authHeaders(),
+    });
+    const d = await r.json();
+    if (!r.ok) return show(d.message, "error");
+    show("Room deleted");
+    await refreshAndReopenRooms();
+  };
+
+  // ── CRUD: Beds (via room shareType) ──
+  const handleAddBed = async () => {
+    const newShareType = selectedRoom.beds.length + 1;
+    const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms/${selectedRoom._id}`, {
+      method: "PUT", headers: authHeaders(),
+      body: JSON.stringify({ roomNumber: selectedRoom.roomNumber, shareType: newShareType }),
+    });
+    const d = await r.json();
+    if (!r.ok) return show(d.message, "error");
+    show("Bed added");
+    await refreshAndReopenBeds();
+  };
+
+  const handleRemoveBed = async (bed) => {
+    if (bed.status === "Occupied") return show("Cannot remove an occupied bed", "error");
+    if (!window.confirm(`Remove Bed ${bed.bedNumber}?`)) return;
+    const newShareType = selectedRoom.beds.length - 1;
+    if (newShareType < 1) return show("A room must have at least 1 bed", "error");
+    const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms/${selectedRoom._id}`, {
+      method: "PUT", headers: authHeaders(),
+      body: JSON.stringify({ roomNumber: selectedRoom.roomNumber, shareType: newShareType }),
+    });
+    const d = await r.json();
+    if (!r.ok) return show(d.message, "error");
+    show("Bed removed");
+    await refreshAndReopenBeds();
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -663,7 +845,7 @@ export default function AddHostel() {
                 <span className={`text-xs px-2 py-1 rounded-full ${isSelected ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700"}`}>{totalBeds} beds</span>
               </div>
 
-              {/* Open Building button — stops propagation so card click doesn't fire */}
+              {/* Open Building button */}
               <button
                 onClick={(e) => { e.stopPropagation(); handleBuildingSelect(building); }}
                 className={`mt-4 w-full py-2 rounded-lg font-medium transition-all ${
@@ -713,21 +895,21 @@ export default function AddHostel() {
             />
           </FormField>
           <FormActions
-            onCancel={() => setShowBModal(false)}
+            onCancel={() => { setShowBModal(false); setEditBuilding(null); }}
             onSubmit={handleAddBuilding}
             submitLabel={editBuilding ? "Update Building" : "Add Building"}
           />
         </div>
       </FormModal>
 
-      {/* ── Add Floor Modal ── */}
+      {/* ── Add / Edit Floor Modal ── */}
       {selectedBuilding && (
         <FormModal
           open={showFModal}
-          onClose={() => setShowFModal(false)}
-          title="Add Floor"
-          subtitle={selectedBuilding.buildingName}
-          icon="📐"
+          onClose={() => { setShowFModal(false); setEditFloor(null); }}
+          title={editFloor ? "Edit Floor" : "Add Floor"}
+          subtitle={editFloor ? `Editing Floor ${editFloor.floorNumber} · ${selectedBuilding.buildingName}` : selectedBuilding.buildingName}
+          icon={editFloor ? "✎" : "📐"}
         >
           <div className="space-y-5">
             <FormField label="Floor Number" required>
@@ -749,19 +931,27 @@ export default function AddHostel() {
                 placeholder="e.g. Ground Floor (optional)"
               />
             </FormField>
-            <FormActions onCancel={() => setShowFModal(false)} onSubmit={handleAddFloor} submitLabel="Add Floor" />
+            <FormActions
+              onCancel={() => { setShowFModal(false); setEditFloor(null); }}
+              onSubmit={handleAddFloor}
+              submitLabel={editFloor ? "Update Floor" : "Add Floor"}
+            />
           </div>
         </FormModal>
       )}
 
-      {/* ── Add Room Modal ── */}
+      {/* ── Add / Edit Room Modal ── */}
       {selectedFloor && (
         <FormModal
           open={showRModal}
-          onClose={() => setShowRModal(false)}
-          title="Add Room"
-          subtitle={`Floor ${selectedFloor.floorNumber}${selectedFloor.floorName ? ` · ${selectedFloor.floorName}` : ""}`}
-          icon="🚪"
+          onClose={() => { setShowRModal(false); setEditRoom(null); }}
+          title={editRoom ? "Edit Room" : "Add Room"}
+          subtitle={
+            editRoom
+              ? `Editing Room ${editRoom.roomNumber} · Floor ${selectedFloor.floorNumber}`
+              : `Floor ${selectedFloor.floorNumber}${selectedFloor.floorName ? ` · ${selectedFloor.floorName}` : ""}`
+          }
+          icon={editRoom ? "✎" : "🚪"}
         >
           <div className="space-y-5">
             <FormField label="Room Number" required>
@@ -795,8 +985,15 @@ export default function AddHostel() {
                   </div>
                 ))}
               </div>
+              {editRoom && Number(rForm.shareType) < editRoom.beds.filter(b => b.status === "Occupied").length && (
+                <p className="text-xs text-red-500 mt-2">⚠️ You cannot reduce below the number of occupied beds.</p>
+              )}
             </div>
-            <FormActions onCancel={() => setShowRModal(false)} onSubmit={handleAddRoom} submitLabel="Add Room" />
+            <FormActions
+              onCancel={() => { setShowRModal(false); setEditRoom(null); }}
+              onSubmit={handleAddRoom}
+              submitLabel={editRoom ? "Update Room" : "Add Room"}
+            />
           </div>
         </FormModal>
       )}
@@ -807,7 +1004,13 @@ export default function AddHostel() {
           building={selectedBuilding}
           floors={selectedBuilding?.floors || []}
           onSelectFloor={handleFloorSelect}
-          onAddFloor={() => setShowFModal(true)}
+          onAddFloor={() => { setEditFloor(null); setFForm({ floorNumber: "", floorName: "" }); setShowFModal(true); }}
+          onEditFloor={(floor) => {
+            setEditFloor(floor);
+            setFForm({ floorNumber: floor.floorNumber.toString(), floorName: floor.floorName || "" });
+            setShowFModal(true);
+          }}
+          onDeleteFloor={handleDeleteFloor}
           onClose={closePopup}
         />
       )}
@@ -816,12 +1019,24 @@ export default function AddHostel() {
           floor={selectedFloor}
           rooms={selectedFloor?.rooms || []}
           onSelectRoom={handleRoomSelect}
-          onAddRoom={() => setShowRModal(true)}
+          onAddRoom={() => { setEditRoom(null); setRForm({ roomNumber: "", shareType: "2" }); setShowRModal(true); }}
+          onEditRoom={(room) => {
+            setEditRoom(room);
+            setRForm({ roomNumber: room.roomNumber, shareType: room.shareType.toString() });
+            setShowRModal(true);
+          }}
+          onDeleteRoom={handleDeleteRoom}
           onClose={closePopup}
         />
       )}
       {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "beds" && (
-        <BedDetailsModal room={selectedRoom} onSelectBed={handleBedSelect} onClose={closePopup} />
+        <BedDetailsModal
+          room={selectedRoom}
+          onSelectBed={handleBedSelect}
+          onAddBed={handleAddBed}
+          onRemoveBed={handleRemoveBed}
+          onClose={closePopup}
+        />
       )}
 
       {/* Tenant Details */}

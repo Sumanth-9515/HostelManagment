@@ -51,7 +51,7 @@ export default function App() {
       <Route path="/tenant-onboarding" element={<TenantOnboardingForm />} />
       {/* ── Tenant self-registration (no auth — uses link token in URL) ── */}
       {/* Owner shares: http://yourapp/tenant-register/<JWT>               */}
-      <Route path="/tenant-register/:token" element={<TenantRegisterPage />} />
+      <Route path="/tenant-register/:token" element={<TenantOnboardingForm />} />
 
       {/* ── Regular user routes wrapped in Layout ──────────────────────── */}
       <Route path="/dashboard" element={

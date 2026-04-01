@@ -62,19 +62,33 @@ export default function OnboardingManager() {
   }, []);
 
   /* ── Generate link ── */
-  const generateLink = async () => {
-    setLinkLoading(true);
-    try {
-      const res  = await fetch(`${API}/tenants/generate-link`, { headers: authHeaders() });
-      const data = await res.json();
-      if (res.ok) { setLink(data.link); }
-      else showToast(data.message || "Failed to generate link", "error");
-    } catch {
-      showToast("Connection error. Please try again.", "error");
-    } finally {
-      setLinkLoading(false);
+/* ── Generate link ── */
+const generateLink = async () => {
+  setLinkLoading(true);
+  try {
+    const res  = await fetch(`${API}/tenants/generate-link`, { headers: authHeaders() });
+    const data = await res.json();
+    
+    if (res.ok) {
+      // --- FIX STARTS HERE ---
+      // 1. Extract the token from the end of the link sent by the backend
+      const token = data.link.split('/').pop(); 
+      
+      // 2. Create a dynamic link using the current website's URL
+      // window.location.origin will be "http://localhost:5173" during dev
+      // and "https://hostel-management-system-sk.netlify.app" in production
+      const dynamicLink = `${window.location.origin}/tenant-register/${token}`;
+      
+      setLink(dynamicLink);
+      // --- FIX ENDS HERE ---
     }
-  };
+    else showToast(data.message || "Failed to generate link", "error");
+  } catch {
+    showToast("Connection error. Please try again.", "error");
+  } finally {
+    setLinkLoading(false);
+  }
+};
 
   /* ── Copy link ── */
   const copyLink = async () => {

@@ -19,10 +19,31 @@ app.use(express.json());
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
   "https://hostel-management-system-sk.netlify.app",
+    "https://hrms-420.netlify.app",
   "http://localhost:5173",
   "http://localhost:3000",
 ];
 
+app.use(
+  cors({
+    origin: function (origin, callback) {
+
+      // ✅ Allow requests with no origin (Postman, mobile apps)
+      if (!origin) return callback(null, true);
+
+      // ✅ Normalize origin (remove trailing slash)
+      const cleanOrigin = origin.replace(/\/$/, "");
+
+      if (allowedOrigins.includes(cleanOrigin)) {
+        callback(null, true);
+      } else {
+        console.log("❌ Blocked by CORS:", origin); // DEBUG
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
 app.use(
   cors({
     origin: function (origin, callback) {

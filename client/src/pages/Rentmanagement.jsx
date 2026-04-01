@@ -1,15 +1,3 @@
-/**
- * RentManagement.jsx
- *
- * Drop this file into your pages or components folder.
- * Expects: sessionStorage.getItem("token") for auth header.
- * API base: import.meta.env.VITE_API_URL  (e.g. http://localhost:5000)
- *
- * Register route in app:
- *   import rentRoutes from "./routes/rentRoutes.js";
- *   app.use("/api/rent", rentRoutes);
- */
-
 import { useEffect, useState, useCallback, useRef } from "react";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
@@ -19,23 +7,10 @@ const authHeader = () => ({
   Authorization: `Bearer ${sessionStorage.getItem("token")}`,
 });
 
-// ─── tiny helpers ────────────────────────────────────────────────────────────
-const fmt = (n) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
-
-const fmtDate = (d) =>
-  d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-
-const fmtDateTime = (d) =>
-  d
-    ? new Date(d).toLocaleString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
+const fmt = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const fmtDateTime = (d) => d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtMonthYear = (d) => d ? new Date(d).toLocaleString("en-IN", { month: "long", year: "numeric" }) : "—";
 
 const statusColor = {
   Paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
@@ -49,318 +24,159 @@ const pill = (status) => (
   </span>
 );
 
-// ─── WhatsApp message builder ────────────────────────────────────────────────
-function buildWAMessage(tenant, record, buildingDetails) {
-  const room = buildingDetails
-    ? `Room ${buildingDetails.roomNumber}, Floor ${buildingDetails.floorNumber}, ${buildingDetails.buildingName}`
-    : "your room";
-  const remaining = record ? record.rentAmount - record.paidAmount : tenant.rentAmount;
-  const month = record
-    ? new Date(record.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" })
-    : new Date().toLocaleString("en-IN", { month: "long", year: "numeric" });
-
-  return encodeURIComponent(
-    `Hello ${tenant.name},\n\nThis is a gentle reminder that your rent of ${fmt(remaining)} for ${month} (${room}) is due.\n\nPlease make the payment at the earliest.\n\nThank you!`
-  );
+function buildPayable(pendingMonths = [], record = null, remaining = 0) {
+  const arr = [];
+  pendingMonths.forEach((pm) => {
+    const rem = pm.rentAmount - pm.paidAmount;
+    if (rem > 0) {
+      arr.push({ monthYear: pm.monthYear, maxAmount: rem, label: `${fmtMonthYear(pm.dueDate)} (Arrears)` });
+    }
+  });
+  if (record && remaining > 0) {
+    arr.push({ monthYear: record.monthYear, maxAmount: remaining, label: `${fmtMonthYear(record.dueDate)} (Current)` });
+  }
+  return arr;
 }
 
-// ─── Email Reminder Button ────────────────────────────────────────────────────
-/**
- * Standalone button that sends a Brevo reminder email for a tenant.
- * - Always clickable (backend re-fetches tenant and validates email).
- * - Shows "Sent ✓" for 3 seconds after success, then resets.
- * - On error, shows the backend message for 3 seconds, then resets.
- * - tenantEmail is optional — only used for the tooltip to show address.
- */
-function EmailReminderButton({ tenantId, tenantEmail, className = "" }) {
-  const [state, setState] = useState("idle"); // "idle" | "sending" | "sent" | "error"
+function buildWAMessage(tenant, record, buildingDetails) {
+  const room = buildingDetails ? `Room ${buildingDetails.roomNumber}` : "your room";
+  const remaining = record ? record.rentAmount - record.paidAmount : tenant.rentAmount;
+  const month = record ? new Date(record.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" }) : "this month";
+  return encodeURIComponent(`Hello ${tenant.name},\n\nThis is a gentle reminder that your rent of ${fmt(remaining)} for ${month} (${room}) is due.\nPlease pay at the earliest.\n\nThank you!`);
+}
+
+function EmailReminderButton({ tenantId, tenantEmail, hasPreviousPending = false, pendingMonthsCount = 0, className = "" }) {
+  const [state, setState] = useState("idle");
   const [errMsg, setErrMsg] = useState("");
   const timerRef = useRef(null);
-
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
   const handleSend = async (e) => {
     e.stopPropagation();
     if (state === "sending" || state === "sent") return;
-
-    setState("sending");
-    setErrMsg("");
+    setState("sending"); setErrMsg("");
     try {
-      const r = await fetch(`${API}/rent/send-reminder`, {
-        method: "POST",
-        headers: authHeader(),
-        body: JSON.stringify({ tenantId }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.message || "Failed to send email.");
-      setState("sent");
-      timerRef.current = setTimeout(() => setState("idle"), 3000);
+      const r = await fetch(`${API}/rent/send-reminder`, { method: "POST", headers: authHeader(), body: JSON.stringify({ tenantId }) });
+      if (!r.ok) throw new Error("Failed to send email.");
+      setState("sent"); timerRef.current = setTimeout(() => setState("idle"), 3000);
     } catch (err) {
-      setErrMsg(err.message || "Error");
-      setState("error");
+      setErrMsg(err.message || "Error"); setState("error");
       timerRef.current = setTimeout(() => { setState("idle"); setErrMsg(""); }, 3000);
     }
   };
 
-  const baseClass =
-    "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold border transition-all duration-200 select-none";
+  const baseClass = "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold border transition-all duration-200 select-none";
+  if (state === "sent") return <button disabled className={`${baseClass} bg-emerald-50 border-emerald-200 text-emerald-700 ${className}`}>Sent ✓</button>;
+  if (state === "error") return <button onClick={handleSend} className={`${baseClass} bg-rose-50 border-rose-200 text-rose-700 ${className}`}>Failed</button>;
+  if (state === "sending") return <button disabled className={`${baseClass} bg-violet-50 border-violet-200 text-violet-500 opacity-75 ${className}`}>Sending…</button>;
 
-  const mailIcon = (
-    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  );
-
-  if (state === "sent") {
-    return (
-      <button
-        disabled
-        className={`${baseClass} bg-emerald-50 border-emerald-200 text-emerald-700 ${className}`}
-        title="Email sent!"
-      >
-        <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-emerald-600 shrink-0">
-          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-        </svg>
-        Sent ✓
-      </button>
-    );
-  }
-
-  if (state === "error") {
-    return (
-      <button
-        onClick={handleSend}
-        className={`${baseClass} bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100 ${className}`}
-        title={errMsg}
-      >
-        <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-rose-500 shrink-0">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-5a1 1 0 112 0v-4a1 1 0 11-2 0v4zm1-8a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
-        </svg>
-        Failed
-      </button>
-    );
-  }
-
-  if (state === "sending") {
-    return (
-      <button
-        disabled
-        className={`${baseClass} bg-violet-50 border-violet-200 text-violet-500 opacity-75 ${className}`}
-      >
-        <div className="w-3 h-3 rounded-full border-2 border-violet-500 border-t-transparent animate-spin shrink-0" />
-        Sending…
-      </button>
-    );
-  }
-
-  // idle — always active, tooltip shows email if available
-  return (
-    <button
-      onClick={handleSend}
-      title={tenantEmail ? `Send email reminder to ${tenantEmail}` : "Send email reminder"}
-      className={`${baseClass} bg-violet-50 hover:bg-violet-500 border-violet-200 text-violet-700 hover:text-white ${className}`}
-    >
-      {mailIcon}
-      Email Reminder
-    </button>
-  );
+  const btnStyle = hasPreviousPending ? `bg-rose-50 hover:bg-rose-500 border-rose-300 text-rose-700 hover:text-white` : `bg-violet-50 hover:bg-violet-500 border-violet-200 text-violet-700 hover:text-white`;
+  return <button onClick={handleSend} className={`${baseClass} ${btnStyle} ${className}`}>{hasPreviousPending ? "⚠️ Warn Email" : "✉️ Email"}</button>;
 }
 
-// ─── Document Viewer Modal ────────────────────────────────────────────────────
 function DocumentViewer({ imageUrl, onClose }) {
-  const handleOpenInNewTab = () => {
-    window.open(imageUrl, "_blank");
-  };
-
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
       <div className="relative max-w-4xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
-        <button
-          onClick={onClose}
-          className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors text-2xl"
-        >
-          ✕
-        </button>
-        <button
-          onClick={handleOpenInNewTab}
-          className="absolute -top-12 right-12 text-white hover:text-gray-300 transition-colors text-sm bg-white/20 px-3 py-1 rounded-lg"
-        >
-          🔗 Open in new tab
-        </button>
-        <img
-          src={imageUrl}
-          alt="Document"
-          className="w-full h-full object-contain rounded-lg"
-        />
+        <button onClick={onClose} className="absolute -top-12 right-0 text-white hover:text-gray-300 text-2xl">✕</button>
+        <button onClick={() => window.open(imageUrl, "_blank")} className="absolute -top-12 right-12 text-white hover:text-gray-300 text-sm bg-white/20 px-3 py-1 rounded-lg">🔗 Open in new tab</button>
+        <img src={imageUrl} alt="Document" className="w-full h-full object-contain rounded-lg" />
       </div>
     </div>
   );
 }
 
-// ─── DueCard component ───────────────────────────────────────────────────────
 function DueCard({ item, onSelect, onPayNow }) {
-  const { tenant, record, remaining, isOverdue, daysOverdue, daysUntilDue } = item;
+  const { tenant, record, remaining, isOverdue, daysOverdue, daysUntilDue, pendingMonths, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = item;
   const alloc = tenant.allocationInfo || {};
   const phone = tenant.phone?.replace(/\D/g, "");
+  const payable = buildPayable(pendingMonths, record, remaining);
 
-  const handleWA = (e) => {
-    e.stopPropagation();
-    const msg = buildWAMessage(tenant, record, alloc);
-    window.open(`https://wa.me/91${phone}?text=${msg}`, "_blank");
-  };
-
-  const handleCall = (e) => {
-    e.stopPropagation();
-    window.location.href = `tel:${tenant.phone}`;
-  };
+  const handleWA = (e) => { e.stopPropagation(); window.open(`https://wa.me/91${phone}?text=${buildWAMessage(tenant, record, alloc)}`, "_blank"); };
+  const handleCall = (e) => { e.stopPropagation(); window.location.href = `tel:${tenant.phone}`; };
 
   return (
-    <div
-      onClick={() => onSelect(tenant._id)}
-      className="relative group cursor-pointer rounded-2xl border border-gray-200 bg-white hover:border-amber-400 hover:shadow-md transition-all duration-200 overflow-hidden"
-    >
-      {/* status strip */}
-      {isOverdue && (
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500" />
-      )}
-      {!isOverdue && (
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500" />
+    <div onClick={() => onSelect(tenant._id)} className="relative group cursor-pointer rounded-2xl border border-gray-200 bg-white hover:border-amber-400 hover:shadow-md transition-all duration-200 overflow-hidden">
+      {hasPreviousPending ? <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-600 via-rose-400 to-rose-600 animate-pulse" /> : isOverdue ? <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500" /> : <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500" />}
+      
+      {hasPreviousPending && (
+        <div className="absolute -top-2 -right-2 z-10">
+          <span className="relative flex h-6 w-6">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-6 w-6 bg-rose-600 items-center justify-center shadow-lg"><span className="text-white text-[10px] font-black leading-none">{pendingMonthsCount}</span></span>
+          </span>
+        </div>
       )}
 
       <div className="p-4 pt-5">
-        {/* top row */}
         <div className="flex items-start justify-between gap-2 mb-3">
-          <div>
-            <p className="font-bold text-gray-900 text-base leading-tight">{tenant.name}</p>
-            <p className="text-gray-500 text-xs mt-0.5">{tenant.phone}</p>
-          </div>
+          <div><p className="font-bold text-gray-900 text-base leading-tight">{tenant.name}</p><p className="text-gray-500 text-xs mt-0.5">{tenant.phone}</p></div>
           <div className="flex gap-1.5 shrink-0">
-            {/* WhatsApp */}
-            <button
-              onClick={handleWA}
-              title="Send WhatsApp reminder"
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-emerald-50 hover:bg-emerald-500 border border-emerald-200 transition-colors group"
-            >
-              <svg viewBox="0 0 24 24" className="w-4 h-4 fill-emerald-600 group-hover:fill-white">
-                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-              </svg>
-            </button>
-            {/* Call */}
-            <button
-              onClick={handleCall}
-              title="Call tenant"
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-50 hover:bg-blue-500 border border-blue-200 transition-colors group"
-            >
-              <svg viewBox="0 0 24 24" className="w-4 h-4 fill-blue-600 group-hover:fill-white">
-                <path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.01L6.6 10.8z" />
-              </svg>
-            </button>
+            <button onClick={handleWA} className="w-8 h-8 flex items-center justify-center rounded-full bg-emerald-50 hover:bg-emerald-500 border border-emerald-200 transition-colors group">📱</button>
+            <button onClick={handleCall} className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-50 hover:bg-blue-500 border border-blue-200 transition-colors group">📞</button>
           </div>
         </div>
 
-        {/* allocation */}
         <div className="flex flex-wrap gap-1.5 mb-3">
-          {alloc.buildingName && (
-            <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">
-              🏢 {alloc.buildingName}
-            </span>
-          )}
-          {alloc.roomNumber && (
-            <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">
-              🚪 Room {alloc.roomNumber}
-            </span>
-          )}
-          {alloc.floorNumber !== undefined && (
-            <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">
-              📍 Floor {alloc.floorNumber}
-            </span>
-          )}
+          {alloc.buildingName && <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">🏢 {alloc.buildingName}</span>}
+          {alloc.roomNumber && <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">🚪 Room {alloc.roomNumber}</span>}
         </div>
 
-        {/* rent info */}
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-gray-400 text-[11px] uppercase tracking-wide">To Pay</p>
-            <p className="text-2xl font-black text-gray-900">{fmt(remaining)}</p>
-            {record?.paidAmount > 0 && (
-              <p className="text-[11px] text-gray-500">Paid: {fmt(record.paidAmount)}</p>
-            )}
+            <p className="text-gray-400 text-[11px] uppercase tracking-wide">Total Accumulated Due</p>
+            <p className={`text-2xl font-black ${hasPreviousPending ? "text-rose-600" : "text-gray-900"}`}>{fmt(totalAccumulatedDue)}</p>
           </div>
           <div className="text-right">
-            {isOverdue ? (
-              <span className="text-rose-600 text-xs font-semibold bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">
-                ⚠️ {daysOverdue}d overdue
-              </span>
-            ) : (
-              <span className="text-amber-600 text-xs font-semibold bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
-                🕐 Due in {daysUntilDue === 0 ? "today" : `${daysUntilDue}d`}
-              </span>
-            )}
+            {isOverdue ? <span className="text-rose-600 text-xs font-semibold bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">⚠️ {daysOverdue}d overdue</span> : daysUntilDue !== null ? <span className="text-amber-600 text-xs font-semibold bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">🕐 Due in {daysUntilDue === 0 ? "today" : `${daysUntilDue}d`}</span> : null}
           </div>
         </div>
 
-        {/* action row: Pay Now + Email Reminder */}
+        {hasPreviousPending && pendingMonths.length > 0 && (
+          <div className="mt-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 space-y-1">
+            <p className="text-rose-600 text-[10px] uppercase tracking-wide font-semibold mb-1">Pending Months</p>
+            {pendingMonths.slice(0, 3).map((pm) => <div key={pm.monthYear} className="flex justify-between text-[11px]"><span className="text-rose-700">{fmtMonthYear(pm.dueDate)}</span><span className="text-rose-700 font-bold">{fmt(pm.rentAmount - pm.paidAmount)}</span></div>)}
+          </div>
+        )}
+
         <div className="mt-3 flex gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onPayNow(tenant._id, record?.monthYear, remaining);
-            }}
-            className="flex-1 py-2 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-600 active:scale-95 text-white transition-all duration-150"
-          >
-            Pay Now
+          <button onClick={(e) => { e.stopPropagation(); onPayNow(tenant._id, payable, payable[0]?.monthYear); }} disabled={payable.length === 0} className={`flex-1 py-2 rounded-xl font-bold text-sm text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${hasPreviousPending ? "bg-rose-500 hover:bg-rose-600 active:scale-95" : "bg-amber-500 hover:bg-amber-600 active:scale-95"}`}>
+            {hasPreviousPending ? "Pay Dues" : "Pay Now"}
           </button>
-          <EmailReminderButton
-            tenantId={tenant._id}
-            tenantEmail={tenant.email}
-            className="shrink-0 px-3"
-          />
+          <EmailReminderButton tenantId={tenant._id} tenantEmail={tenant.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} className="shrink-0 px-3" />
         </div>
       </div>
     </div>
   );
 }
 
-// ─── TenantRow (search results) ──────────────────────────────────────────────
 function TenantRow({ item, onSelect, onPayNow }) {
-  const { tenant, record, remaining } = item;
+  const { tenant, record, remaining, pendingMonths, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = item;
   const alloc = tenant.allocationInfo || {};
+  const payable = buildPayable(pendingMonths, record, remaining);
+  const isFullyPaid = payable.length === 0;
 
   return (
-    <div
-      onClick={() => onSelect(tenant._id)}
-      className="flex items-center gap-4 px-5 py-3.5 rounded-xl border border-gray-200 bg-white hover:border-amber-300 hover:shadow-sm cursor-pointer transition-all duration-150 group"
-    >
-      <div className="w-10 h-10 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
-        <span className="text-amber-700 font-bold text-sm">{tenant.name?.[0]?.toUpperCase()}</span>
+    <div onClick={() => onSelect(tenant._id)} className={`relative flex items-center gap-4 px-5 py-3.5 rounded-xl border bg-white hover:shadow-sm cursor-pointer transition-all duration-150 group ${hasPreviousPending ? "border-rose-300 hover:border-rose-400 bg-rose-50/30" : "border-gray-200 hover:border-amber-300"}`}>
+      {hasPreviousPending && (
+        <div className="absolute -top-2 -left-2 z-10"><span className="relative flex h-5 w-5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-5 w-5 bg-rose-600 items-center justify-center shadow"><span className="text-white text-[9px] font-black leading-none">{pendingMonthsCount}</span></span></span></div>
+      )}
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${hasPreviousPending ? "bg-rose-100 border border-rose-300" : "bg-amber-100 border border-amber-200"}`}>
+        <span className={`font-bold text-sm ${hasPreviousPending ? "text-rose-700" : "text-amber-700"}`}>{tenant.name?.[0]?.toUpperCase()}</span>
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-gray-900 font-semibold text-sm truncate">{tenant.name}</p>
-        <p className="text-gray-500 text-xs truncate">
-          {tenant.phone}
-          {alloc.roomNumber ? ` · Room ${alloc.roomNumber}` : ""}
-          {alloc.buildingName ? ` · ${alloc.buildingName}` : ""}
-        </p>
+        <p className="text-gray-500 text-xs truncate">{tenant.phone} {alloc.roomNumber ? ` · Room ${alloc.roomNumber}` : ""}</p>
+        {hasPreviousPending && <p className="text-rose-600 text-[10px] font-semibold mt-0.5">{pendingMonthsCount} month arrears — {fmt(totalAccumulatedDue)} total</p>}
       </div>
       <div className="text-right shrink-0">
-        {pill(record?.status || "Due")}
-        <p className="text-gray-900 font-bold text-sm mt-1">{fmt(remaining)}</p>
+        {hasPreviousPending ? <><span className="px-2 py-0.5 rounded-full text-xs font-semibold border bg-rose-100 text-rose-800 border-rose-200">Arrears</span><p className="text-rose-600 font-black text-sm mt-1">{fmt(totalAccumulatedDue)}</p></> : <>{pill(record?.status || "Due")}<p className="text-gray-900 font-bold text-sm mt-1">{fmt(totalAccumulatedDue)}</p></>}
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          if (record?.status !== "Paid") onPayNow(tenant._id, record?.monthYear, remaining);
-        }}
-        disabled={record?.status === "Paid"}
-        className="ml-2 px-3 py-1.5 text-xs rounded-lg font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-all active:scale-95 shrink-0"
-      >
-        Pay
-      </button>
+      <button onClick={(e) => { e.stopPropagation(); if (!isFullyPaid) onPayNow(tenant._id, payable, payable[0]?.monthYear); }} disabled={isFullyPaid} className={`ml-2 px-3 py-1.5 text-xs rounded-lg font-semibold disabled:opacity-30 disabled:cursor-not-allowed text-white transition-all active:scale-95 shrink-0 ${hasPreviousPending ? "bg-rose-500 hover:bg-rose-600" : "bg-amber-500 hover:bg-amber-600"}`}>Pay</button>
     </div>
   );
 }
 
-// ─── Tenant Detail Modal ──────────────────────────────────────────────────────
 function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -370,50 +186,60 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
     setLoading(true);
     const r = await fetch(`${API}/rent/tenant/${tenantId}`, { headers: authHeader() });
     const d = await r.json();
-    setData(d);
-    setLoading(false);
+    setData(d); setLoading(false);
   }, [tenantId]);
 
-  useEffect(() => {
-    load();
-  }, [load, onPaymentDone]);
+  useEffect(() => { load(); }, [load, onPaymentDone]);
 
   if (!data && !loading) return null;
 
-  const { tenant, buildingDetails, currentRecord, remaining, history } = data || {};
+  const { tenant, buildingDetails, currentRecord, remaining, history, pendingMonths, arrearsTotal, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = data || {};
   const phone = tenant?.phone?.replace(/\D/g, "");
+  const payable = buildPayable(pendingMonths, currentRecord, remaining);
 
-  const handleWA = () => {
-    const msg = buildWAMessage(tenant, currentRecord, buildingDetails);
-    window.open(`https://wa.me/91${phone}?text=${msg}`, "_blank");
-  };
-
-  const handleViewDocument = (docUrl) => {
-    if (docUrl) setViewingDoc(docUrl);
-  };
+  const handleViewDocument = (docUrl) => { if (docUrl) setViewingDoc(docUrl); };
 
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
         <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl">
-          {/* header */}
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
             <h2 className="text-gray-900 font-bold text-lg">Tenant Details</h2>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
-            >
-              ✕
-            </button>
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center h-48">
-              <div className="w-8 h-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
-            </div>
+            <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" /></div>
           ) : (
             <div className="p-6 space-y-6">
-              {/* Profile */}
+
+              {hasPreviousPending && (
+                <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="relative flex h-4 w-4 shrink-0"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500" /></span>
+                    <h4 className="text-rose-700 font-bold text-sm">Carry-Forward Dues — {pendingMonthsCount} Month{pendingMonthsCount > 1 ? "s" : ""} Unpaid</h4>
+                  </div>
+                  <div className="text-center mb-3">
+                    <p className="text-rose-400 text-xs uppercase tracking-wide">Total Arrears (Previous Months)</p>
+                    <p className="text-rose-600 text-3xl font-black">{fmt(arrearsTotal)}</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    {pendingMonths.map((pm) => {
+                      const pmRemaining = pm.rentAmount - pm.paidAmount;
+                      return (
+                        <div key={pm.monthYear} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-rose-200">
+                          <div><span className="text-gray-700 text-xs font-medium">{fmtMonthYear(pm.dueDate)}</span>{pm.paidAmount > 0 && <span className="text-gray-400 text-[10px] ml-2">(paid {fmt(pm.paidAmount)})</span>}</div>
+                          <div className="flex items-center gap-2">
+                            {pill(pm.status)}<span className="text-rose-600 text-xs font-bold">{fmt(pmRemaining)}</span>
+                            <button onClick={() => onPayNow(tenant._id, payable, pm.monthYear)} className="text-[10px] px-2 py-0.5 rounded-md bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors">Pay</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-start gap-4">
                 <div className="w-14 h-14 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
                   <span className="text-amber-700 font-black text-xl">{tenant?.name?.[0]?.toUpperCase()}</span>
@@ -422,38 +248,21 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
                   <h3 className="text-gray-900 font-bold text-xl">{tenant?.name}</h3>
                   <p className="text-gray-500 text-sm">{tenant?.email || "No email on record"}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    <button
-                      onClick={handleWA}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 text-emerald-700 hover:text-white transition-colors"
-                    >
-                      <span>📱</span> WhatsApp
-                    </button>
-                    <a
-                      href={`tel:${tenant?.phone}`}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-600 border border-blue-200 text-blue-700 hover:text-white transition-colors"
-                    >
-                      <span>📞</span> Call
-                    </a>
-                    {/* Email reminder button in detail modal */}
-                    {currentRecord?.status !== "Paid" && (
-                      <EmailReminderButton
-                        tenantId={tenant?._id}
-                        tenantEmail={tenant?.email}
-                      />
-                    )}
+                    <button onClick={() => window.open(`https://wa.me/91${phone}?text=${buildWAMessage(tenant, currentRecord, buildingDetails)}`, "_blank")} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 text-emerald-700 hover:text-white transition-colors">📱 WhatsApp</button>
+                    <a href={`tel:${tenant?.phone}`} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-600 border border-blue-200 text-blue-700 hover:text-white transition-colors">📞 Call</a>
+                    {(currentRecord?.status !== "Paid" || hasPreviousPending) && <EmailReminderButton tenantId={tenant?._id} tenantEmail={tenant?.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} />}
                   </div>
                 </div>
                 <div className="text-right">
-                  {pill(currentRecord?.status || "Due")}
+                  <p className="text-gray-400 text-[10px] uppercase font-semibold mb-1">Grand Total Due</p>
+                  <p className="text-xl font-black text-gray-900">{fmt(totalAccumulatedDue)}</p>
                 </div>
               </div>
 
-              {/* Father's Details Section */}
+              {/* FATHER DETAILS RESTORED */}
               {(tenant?.fatherName || tenant?.fatherPhone) && (
                 <div className="rounded-xl border border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50 p-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <span>👨‍👦</span> Father's Details
-                  </h4>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>👨‍👦</span> Father's Details</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {tenant?.fatherName && (
                       <div className="bg-white rounded-lg p-3 border border-gray-200">
@@ -465,45 +274,26 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
                       <div className="bg-white rounded-lg p-3 border border-gray-200">
                         <p className="text-gray-500 text-[10px] uppercase tracking-wide">Father's Phone</p>
                         <p className="text-gray-900 font-medium text-sm">{tenant.fatherPhone}</p>
-                        <button
-                          onClick={() => window.location.href = `tel:${tenant.fatherPhone}`}
-                          className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                        >
-                          📞 Call Father
-                        </button>
+                        <button onClick={() => window.location.href = `tel:${tenant.fatherPhone}`} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium">📞 Call Father</button>
                       </div>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Info grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
-                  ["Phone", tenant?.phone],
-                  ["Joining Date", fmtDate(tenant?.joiningDate)],
-                  ["Monthly Rent", fmt(tenant?.rentAmount)],
-                  ["Permanent Address", tenant?.permanentAddress],
-                  buildingDetails && ["Building", buildingDetails.buildingName],
-                  buildingDetails && ["Floor", `Floor ${buildingDetails.floorNumber}${buildingDetails.floorName ? ` (${buildingDetails.floorName})` : ""}`],
-                  buildingDetails && ["Room", `Room ${buildingDetails.roomNumber}`],
-                  buildingDetails && ["Share Type", `${buildingDetails.shareType}-sharing`],
-                ]
-                  .filter(Boolean)
-                  .map(([label, val]) => (
-                    <div key={label} className="rounded-xl bg-gray-50 border border-gray-200 p-3">
-                      <p className="text-gray-500 text-[11px] uppercase tracking-wide mb-0.5">{label}</p>
-                      <p className="text-gray-900 text-sm font-medium">{val || "—"}</p>
-                    </div>
-                  ))}
+                  ["Phone", tenant?.phone], ["Joining Date", fmtDate(tenant?.joiningDate)], ["Monthly Rent", fmt(tenant?.rentAmount)], ["Permanent Address", tenant?.permanentAddress],
+                  buildingDetails && ["Building", buildingDetails.buildingName], buildingDetails && ["Floor", `Floor ${buildingDetails.floorNumber}`], buildingDetails && ["Room", `Room ${buildingDetails.roomNumber}`]
+                ].filter(Boolean).map(([label, val]) => (
+                  <div key={label} className="rounded-xl bg-gray-50 border border-gray-200 p-3"><p className="text-gray-500 text-[11px] uppercase tracking-wide mb-0.5">{label}</p><p className="text-gray-900 text-sm font-medium">{val || "—"}</p></div>
+                ))}
               </div>
 
-              {/* Documents Section */}
+              {/* DOCUMENTS SECTION RESTORED */}
               {(tenant?.documents?.aadharFront || tenant?.documents?.aadharBack || tenant?.documents?.passportPhoto) && (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <span>📄</span> Documents
-                  </h4>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>📄</span> Documents</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {tenant?.documents?.aadharFront && (
                       <div className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewDocument(tenant.documents.aadharFront)}>
@@ -530,242 +320,134 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
                 </div>
               )}
 
-              {/* Current month payment */}
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <div>
                     <p className="text-gray-500 text-xs uppercase tracking-wide">Current Month</p>
-                    <p className="text-gray-900 font-bold text-lg">
-                      {currentRecord
-                        ? new Date(currentRecord.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" })
-                        : "—"}
-                    </p>
+                    <p className="text-gray-900 font-bold text-lg">{currentRecord ? fmtMonthYear(currentRecord.dueDate) : "—"}</p>
                     <p className="text-gray-500 text-xs">Due: {fmtDate(currentRecord?.dueDate)}</p>
                   </div>
                   {currentRecord?.status !== "Paid" && (
-                    <button
-                      onClick={() => onPayNow(tenant._id, currentRecord?.monthYear, remaining)}
-                      className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm active:scale-95 transition-all"
-                    >
-                      Pay Now
-                    </button>
+                    <button onClick={() => onPayNow(tenant._id, payable, currentRecord?.monthYear)} className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm active:scale-95 transition-all">Pay Now</button>
                   )}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200">
-                    <p className="text-gray-500 text-[11px]">Rent</p>
-                    <p className="text-gray-900 font-bold">{fmt(currentRecord?.rentAmount || tenant?.rentAmount)}</p>
-                  </div>
-                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200">
-                    <p className="text-gray-500 text-[11px]">Paid</p>
-                    <p className="text-emerald-600 font-bold">{fmt(currentRecord?.paidAmount || 0)}</p>
-                  </div>
-                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200">
-                    <p className="text-gray-500 text-[11px]">Remaining</p>
-                    <p className={`font-bold ${remaining > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                      {fmt(remaining || 0)}
-                    </p>
-                  </div>
+                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Rent</p><p className="text-gray-900 font-bold">{fmt(currentRecord?.rentAmount || tenant?.rentAmount)}</p></div>
+                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Paid</p><p className="text-emerald-600 font-bold">{fmt(currentRecord?.paidAmount || 0)}</p></div>
+                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Remaining</p><p className={`font-bold ${remaining > 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmt(remaining || 0)}</p></div>
                 </div>
-
-                {/* partial payments of this month */}
-                {currentRecord?.payments?.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-gray-500 text-xs uppercase tracking-wide mb-2">Payments This Month</p>
-                    <div className="space-y-1.5">
-                      {currentRecord.payments.map((p, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-white border border-gray-200">
-                          <span className="text-gray-500 text-xs">{fmtDateTime(p.paidAt)}</span>
-                          <span className="text-gray-900 font-semibold">{fmt(p.amount)}</span>
-                          {p.note && <span className="text-gray-400 text-xs italic">{p.note}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {/* Payment History */}
               <div>
                 <p className="text-gray-500 text-xs uppercase tracking-wide mb-3">Full Payment History</p>
-                {history?.length === 0 ? (
-                  <p className="text-gray-400 text-sm text-center py-4">No history yet.</p>
-                ) : (
+                {history?.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">No history yet.</p> : (
                   <div className="space-y-2">
-                    {history?.map((rec) => (
-                      <div
-                        key={rec._id}
-                        className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 flex items-center justify-between"
-                      >
-                        <div>
-                          <p className="text-gray-900 text-sm font-semibold">
-                            {new Date(rec.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" })}
-                          </p>
-                          <p className="text-gray-500 text-xs">Due: {fmtDate(rec.dueDate)}</p>
+                    {history?.map((rec) => {
+                      const recRemaining = rec.rentAmount - rec.paidAmount;
+                      const isPending = rec.status !== "Paid";
+                      return (
+                        <div key={rec._id} className={`rounded-xl border px-4 py-3 flex items-center justify-between ${isPending ? "bg-rose-50 border-rose-200" : "bg-gray-50 border-gray-200"}`}>
+                          <div><p className="text-gray-900 text-sm font-semibold">{fmtMonthYear(rec.dueDate)}</p><p className="text-gray-500 text-xs">Due: {fmtDate(rec.dueDate)}</p></div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">{pill(rec.status)}<p className="text-gray-500 text-xs mt-1">{fmt(rec.paidAmount)} / {fmt(rec.rentAmount)}</p></div>
+                            {isPending && <button onClick={() => onPayNow(tenant._id, [{ monthYear: rec.monthYear, maxAmount: recRemaining, label: fmtMonthYear(rec.dueDate) }], rec.monthYear)} className="text-[10px] px-2 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors shrink-0">Pay {fmt(recRemaining)}</button>}
+                          </div>
                         </div>
-                        <div className="text-right">
-                          {pill(rec.status)}
-                          <p className="text-gray-500 text-xs mt-1">
-                            {fmt(rec.paidAmount)} / {fmt(rec.rentAmount)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
+
             </div>
           )}
         </div>
       </div>
-
-      {/* Document Viewer Modal */}
-      {viewingDoc && (
-        <DocumentViewer
-          imageUrl={viewingDoc}
-          onClose={() => setViewingDoc(null)}
-        />
-      )}
+      {viewingDoc && <DocumentViewer imageUrl={viewingDoc} onClose={() => setViewingDoc(null)} />}
     </>
   );
 }
 
-// ─── Pay Modal ────────────────────────────────────────────────────────────────
-function PayModal({ tenantId, monthYear, maxAmount, onClose, onSuccess }) {
+function PayModal({ tenantId, payableMonths, initialMonthYear, onClose, onSuccess }) {
+  const [selectedMonth, setSelectedMonth] = useState(initialMonthYear || payableMonths[0]?.monthYear);
+  const selectedOption = payableMonths.find(m => m.monthYear === selectedMonth);
+  const maxAmount = selectedOption ? selectedOption.maxAmount : 0;
+
   const [amount, setAmount] = useState(maxAmount || "");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef(null);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => { if (selectedOption) setAmount(selectedOption.maxAmount); setError(""); }, [selectedMonth]);
 
   const handlePay = async () => {
     const val = Number(amount);
     if (!val || val <= 0) return setError("Enter a valid amount.");
     if (val > maxAmount) return setError(`Amount cannot exceed remaining due of ${fmt(maxAmount)}.`);
 
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
-      const r = await fetch(`${API}/rent/pay`, {
-        method: "POST",
-        headers: authHeader(),
-        body: JSON.stringify({ tenantId, amount: val, note, monthYear }),
-      });
+      const r = await fetch(`${API}/rent/pay`, { method: "POST", headers: authHeader(), body: JSON.stringify({ tenantId, amount: val, note, monthYear: selectedMonth }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.message);
       onSuccess(d);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
+
+  if (!payableMonths || payableMonths.length === 0) return null; 
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-gray-900 font-bold">Record Payment</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg transition-colors">✕</button>
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white">
+          <h3 className="text-gray-900 font-bold">Record Payment</h3><button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg transition-colors">✕</button>
         </div>
-
         <div className="p-6 space-y-4">
-          <div>
-            <p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Remaining Due</p>
-            <p className="text-3xl font-black text-amber-600">{fmt(maxAmount)}</p>
-          </div>
-
-          <div>
-            <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">
-              Amount Paid (₹)
-            </label>
-            <input
-              ref={inputRef}
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handlePay()}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-amber-400 transition-colors placeholder:text-gray-400"
-              placeholder="0"
-              min="1"
-              max={maxAmount}
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">
-              Note (optional)
-            </label>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-amber-400 transition-colors placeholder:text-gray-400"
-              placeholder="Cash, UPI, etc."
-            />
-          </div>
-
-          {error && (
-            <p className="text-rose-600 text-sm bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-              {error}
-            </p>
+          {payableMonths.length > 1 ? (
+             <div>
+               <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Select Month to Pay</label>
+               <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-sm font-bold focus:outline-none focus:border-amber-400">
+                 {payableMonths.map(m => <option key={m.monthYear} value={m.monthYear}>{m.label} — {fmt(m.maxAmount)}</option>)}
+               </select>
+             </div>
+          ) : (
+             <div><p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Paying For</p><p className="text-gray-900 text-lg font-bold">{selectedOption?.label}</p></div>
           )}
 
-          <button
-            onClick={handlePay}
-            disabled={loading}
-            className="w-full py-3 rounded-xl font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all text-base"
-          >
-            {loading ? "Processing…" : "Confirm Payment"}
-          </button>
-
-          <p className="text-gray-400 text-xs text-center">
-            Partial payments allowed. Remaining balance will carry forward.
-            {" "}A confirmation email will be sent automatically if the tenant has an email on record.
-          </p>
+          <div><p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Remaining Due</p><p className="text-3xl font-black text-amber-600">{fmt(maxAmount)}</p></div>
+          <div><label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Amount Paid (₹)</label><input ref={inputRef} type="number" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePay()} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-amber-400" min="1" max={maxAmount} /></div>
+          <div><label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Note (optional)</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-amber-400" placeholder="Cash, UPI, etc." /></div>
+          
+          {error && <p className="text-rose-600 text-sm bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
+          <button onClick={handlePay} disabled={loading} className="w-full py-3 rounded-xl font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all text-base">{loading ? "Processing…" : "Confirm Payment"}</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ msg, onDone }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 3000);
-    return () => clearTimeout(t);
-  }, [onDone]);
-
-  return (
-    <div className="fixed bottom-6 right-6 z-[70] flex items-center gap-3 bg-emerald-600 border border-emerald-500 text-white px-5 py-3 rounded-2xl shadow-xl animate-bounce-once">
-      <span className="text-lg">✅</span>
-      <span className="font-semibold text-sm">{msg}</span>
-    </div>
-  );
+  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
+  return <div className="fixed bottom-6 right-6 z-[70] flex items-center gap-3 bg-emerald-600 border border-emerald-500 text-white px-5 py-3 rounded-2xl shadow-xl animate-bounce-once"><span className="text-lg">✅</span><span className="font-semibold text-sm">{msg}</span></div>;
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RentManagement() {
   const [dueItems, setDueItems] = useState([]);
   const [dueLoading, setDueLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchType, setSearchType] = useState("name"); // "name" | "room"
+  const [searchType, setSearchType] = useState("name");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-
   const [selectedTenantId, setSelectedTenantId] = useState(null);
-  const [payModal, setPayModal] = useState(null); // { tenantId, monthYear, maxAmount }
+  const [payModal, setPayModal] = useState(null); 
   const [toast, setToast] = useState("");
-  const [paymentDone, setPaymentDone] = useState(0); // counter to trigger re-fetch
+  const [paymentDone, setPaymentDone] = useState(0); 
 
   const pollRef = useRef(null);
 
-  // ── Load due cards ──────────────────────────────────────────────────────────
   const loadDue = useCallback(async () => {
     try {
       const r = await fetch(`${API}/rent/due`, { headers: authHeader() });
@@ -777,230 +459,89 @@ export default function RentManagement() {
 
   useEffect(() => {
     loadDue();
-    // Poll every 60 seconds for real-time feel
     pollRef.current = setInterval(loadDue, 60_000);
     return () => clearInterval(pollRef.current);
   }, [loadDue, paymentDone]);
 
-  // ── Search ──────────────────────────────────────────────────────────────────
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
-    setSearching(true);
-    setHasSearched(true);
+    setSearching(true); setHasSearched(true);
     try {
-      const r = await fetch(
-        `${API}/rent/search?q=${encodeURIComponent(searchQuery)}&type=${searchType}`,
-        { headers: authHeader() }
-      );
+      const r = await fetch(`${API}/rent/search?q=${encodeURIComponent(searchQuery)}&type=${searchType}`, { headers: authHeader() });
       const d = await r.json();
       setSearchResults(Array.isArray(d) ? d : []);
-    } catch {
-      setSearchResults([]);
-    }
+    } catch { setSearchResults([]); }
     setSearching(false);
   }, [searchQuery, searchType]);
 
-  // Live search on type for names
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      setHasSearched(false);
-      return;
-    }
+    if (!searchQuery.trim()) { setSearchResults([]); setHasSearched(false); return; }
     const t = setTimeout(handleSearch, 400);
     return () => clearTimeout(t);
   }, [searchQuery, handleSearch]);
 
-  const onPayNow = (tenantId, monthYear, remaining) => {
-    setPayModal({ tenantId, monthYear, maxAmount: remaining });
-  };
-
-  const onPaySuccess = (data) => {
-    setPayModal(null);
-    setToast(data.message || "Payment recorded!");
-    setPaymentDone((n) => n + 1);
-    if (hasSearched) handleSearch();
-  };
+  const onPayNow = (tenantId, payableMonths, initialMonthYear) => { setPayModal({ tenantId, payableMonths, initialMonthYear }); };
+  const onPaySuccess = (data) => { setPayModal(null); setToast(data.message || "Payment recorded!"); setPaymentDone((n) => n + 1); if (hasSearched) handleSearch(); };
 
   const summaryStats = {
     total: dueItems.length,
-    overdue: dueItems.filter((i) => i.isOverdue).length,
-    upcoming: dueItems.filter((i) => !i.isOverdue).length,
-    totalDue: dueItems.reduce((s, i) => s + i.remaining, 0),
+    overdue: dueItems.filter((i) => i.isOverdue || i.hasPreviousPending).length,
+    upcoming: dueItems.filter((i) => !i.isOverdue && !i.hasPreviousPending).length,
+    totalDue: dueItems.reduce((s, i) => s + (i.totalAccumulatedDue ?? i.remaining), 0),
   };
+
+  const carryForwardCount = dueItems.filter((i) => i.hasPreviousPending).length;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
-      {/* ── Header ── */}
       <div className="border-b border-gray-200 bg-white/95 backdrop-blur sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-black tracking-tight">
-              <span className="text-amber-500">₹</span> Rent Management
-            </h1>
-            <p className="text-gray-500 text-xs mt-0.5">Real-time hostel rent tracking</p>
-          </div>
+          <div><h1 className="text-xl font-black tracking-tight"><span className="text-amber-500">₹</span> Rent Management</h1><p className="text-gray-500 text-xs mt-0.5">Real-time hostel rent tracking</p></div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-gray-500 text-xs">Live</span>
+            {carryForwardCount > 0 && <span className="flex items-center gap-1.5 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-1 rounded-lg"><span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" /></span>{carryForwardCount} carry-forward</span>}
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /><span className="text-gray-500 text-xs">Live</span>
           </div>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-5 py-6 space-y-8">
-
-        {/* ── Summary Stats ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: "Total Alerts", value: summaryStats.total, color: "text-gray-900" },
-            { label: "Overdue", value: summaryStats.overdue, color: "text-rose-600" },
+            { label: "Overdue / Carry-forward", value: summaryStats.overdue, color: "text-rose-600" },
             { label: "Due Soon", value: summaryStats.upcoming, color: "text-amber-600" },
             { label: "Total Pending", value: fmt(summaryStats.totalDue), color: "text-amber-600" },
           ].map(({ label, value, color }) => (
-            <div key={label} className="rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
-              <p className="text-gray-500 text-xs uppercase tracking-wide">{label}</p>
-              <p className={`text-2xl font-black mt-1 ${color}`}>{value}</p>
-            </div>
+            <div key={label} className="rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-sm"><p className="text-gray-500 text-xs uppercase tracking-wide">{label}</p><p className={`text-2xl font-black mt-1 ${color}`}>{value}</p></div>
           ))}
         </div>
 
-        {/* ── Due / Upcoming Cards ── */}
-        <section>
-          <div className="flex items-center gap-3 mb-4">
-            <h2 className="text-gray-900 font-bold text-base">⚡ Due Alerts</h2>
-            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
-              Due within 2 days or overdue
-            </span>
+        {carryForwardCount > 0 && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3.5 flex items-start gap-3">
+            <span className="relative flex h-5 w-5 shrink-0 mt-0.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-5 w-5 bg-rose-500 items-center justify-center"><span className="text-white text-[9px] font-black">{carryForwardCount}</span></span></span>
+            <div><p className="text-rose-700 font-bold text-sm">{carryForwardCount} tenant{carryForwardCount > 1 ? "s have" : " has"} pending dues from previous months</p><p className="text-rose-500 text-xs mt-0.5">Payments are being tracked from each tenant's joining date. Cards with a red bubble indicate carry-forward arrears.</p></div>
           </div>
+        )}
 
-          {dueLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-48 rounded-2xl bg-gray-100 border border-gray-200 animate-pulse" />
-              ))}
-            </div>
-          ) : dueItems.length === 0 ? (
-            <div className="text-center py-12 rounded-2xl border border-gray-200 bg-white/40">
-              <p className="text-4xl mb-2">🎉</p>
-              <p className="text-gray-600 font-semibold">All clear! No dues within the next 2 days.</p>
-              <p className="text-gray-400 text-sm mt-1">Check back later or use search below.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {dueItems.map((item) => (
-                <DueCard
-                  key={item.tenant._id}
-                  item={item}
-                  onSelect={setSelectedTenantId}
-                  onPayNow={onPayNow}
-                />
-              ))}
-            </div>
-          )}
+        <section>
+          <div className="flex items-center gap-3 mb-4"><h2 className="text-gray-900 font-bold text-base">⚡ Due Alerts</h2><span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">Due within 2 days, overdue, or carry-forward arrears</span></div>
+          {dueLoading ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{[1, 2, 3].map((i) => <div key={i} className="h-48 rounded-2xl bg-gray-100 border border-gray-200 animate-pulse" />)}</div> : dueItems.length === 0 ? <div className="text-center py-12 rounded-2xl border border-gray-200 bg-white/40"><p className="text-4xl mb-2">🎉</p><p className="text-gray-600 font-semibold">All clear! No dues within the next 2 days.</p></div> : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{dueItems.map((item) => <DueCard key={item.tenant._id} item={item} onSelect={setSelectedTenantId} onPayNow={onPayNow} />)}</div>}
         </section>
 
-        {/* ── Search ── */}
         <section>
           <h2 className="text-gray-900 font-bold text-base mb-4">🔍 Search Tenants</h2>
-
           <div className="flex flex-col sm:flex-row gap-2 mb-4">
-            {/* Type toggle */}
-            <div className="flex rounded-xl border border-gray-200 overflow-hidden shrink-0">
-              <button
-                onClick={() => { setSearchType("name"); setSearchResults([]); setHasSearched(false); }}
-                className={`px-4 py-2 text-sm font-semibold transition-colors ${
-                  searchType === "name"
-                    ? "bg-amber-500 text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                By Name
-              </button>
-              <button
-                onClick={() => { setSearchType("room"); setSearchResults([]); setHasSearched(false); }}
-                className={`px-4 py-2 text-sm font-semibold transition-colors ${
-                  searchType === "room"
-                    ? "bg-amber-500 text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                By Room
-              </button>
-            </div>
-
-            {/* Search input */}
-            <div className="flex flex-1 min-w-48 rounded-xl border border-gray-200 bg-white overflow-hidden focus-within:border-amber-400 transition-colors">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                placeholder={searchType === "name" ? "Enter tenant name…" : "Enter room number…"}
-                className="flex-1 bg-transparent px-4 py-2.5 text-gray-900 text-sm focus:outline-none placeholder:text-gray-400"
-              />
-              <button
-                onClick={handleSearch}
-                className="px-4 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm transition-colors"
-              >
-                {searching ? "…" : "Search"}
-              </button>
-            </div>
+            <div className="flex rounded-xl border border-gray-200 overflow-hidden shrink-0"><button onClick={() => { setSearchType("name"); setSearchResults([]); setHasSearched(false); }} className={`px-4 py-2 text-sm font-semibold transition-colors ${searchType === "name" ? "bg-amber-500 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>By Name</button><button onClick={() => { setSearchType("room"); setSearchResults([]); setHasSearched(false); }} className={`px-4 py-2 text-sm font-semibold transition-colors ${searchType === "room" ? "bg-amber-500 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>By Room</button></div>
+            <div className="flex flex-1 min-w-48 rounded-xl border border-gray-200 bg-white overflow-hidden focus-within:border-amber-400 transition-colors"><input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} placeholder={searchType === "name" ? "Enter tenant name…" : "Enter room number…"} className="flex-1 bg-transparent px-4 py-2.5 text-gray-900 text-sm focus:outline-none placeholder:text-gray-400" /><button onClick={handleSearch} className="px-4 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm transition-colors">{searching ? "…" : "Search"}</button></div>
           </div>
-
-          {/* Results */}
-          {searching && (
-            <div className="flex items-center gap-2 py-4 text-gray-500 text-sm">
-              <div className="w-4 h-4 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
-              Searching…
-            </div>
-          )}
-
-          {!searching && hasSearched && searchResults.length === 0 && (
-            <div className="text-center py-8 rounded-xl border border-gray-200 bg-white/40">
-              <p className="text-gray-500 text-sm">No tenants found for "{searchQuery}"</p>
-            </div>
-          )}
-
-          {!searching && searchResults.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-gray-500 text-xs mb-2">
-                {searchResults.length} result{searchResults.length !== 1 ? "s" : ""} found
-              </p>
-              {searchResults.map((item) => (
-                <TenantRow
-                  key={item.tenant._id}
-                  item={item}
-                  onSelect={setSelectedTenantId}
-                  onPayNow={onPayNow}
-                />
-              ))}
-            </div>
-          )}
+          {searching && <div className="flex items-center gap-2 py-4 text-gray-500 text-sm"><div className="w-4 h-4 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" /> Searching…</div>}
+          {!searching && hasSearched && searchResults.length === 0 && <div className="text-center py-8 rounded-xl border border-gray-200 bg-white/40"><p className="text-gray-500 text-sm">No tenants found for "{searchQuery}"</p></div>}
+          {!searching && searchResults.length > 0 && <div className="space-y-2"><p className="text-gray-500 text-xs mb-2">{searchResults.length} result{searchResults.length !== 1 ? "s" : ""} found</p>{searchResults.map((item) => <TenantRow key={item.tenant._id} item={item} onSelect={setSelectedTenantId} onPayNow={onPayNow} />)}</div>}
         </section>
       </div>
 
-      {/* ── Tenant Detail Modal ── */}
-      {selectedTenantId && (
-        <TenantDetailModal
-          tenantId={selectedTenantId}
-          onClose={() => setSelectedTenantId(null)}
-          onPayNow={onPayNow}
-          onPaymentDone={paymentDone}
-        />
-      )}
-
-      {/* ── Pay Modal ── */}
-      {payModal && (
-        <PayModal
-          tenantId={payModal.tenantId}
-          monthYear={payModal.monthYear}
-          maxAmount={payModal.maxAmount}
-          onClose={() => setPayModal(null)}
-          onSuccess={onPaySuccess}
-        />
-      )}
-
-      {/* ── Toast ── */}
+      {selectedTenantId && <TenantDetailModal tenantId={selectedTenantId} onClose={() => setSelectedTenantId(null)} onPayNow={onPayNow} onPaymentDone={paymentDone} />}
+      {payModal && <PayModal tenantId={payModal.tenantId} payableMonths={payModal.payableMonths} initialMonthYear={payModal.initialMonthYear} onClose={() => setPayModal(null)} onSuccess={onPaySuccess} />}
       {toast && <Toast msg={toast} onDone={() => setToast("")} />}
     </div>
   );
