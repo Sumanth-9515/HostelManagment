@@ -10,16 +10,25 @@ import buildingRoutes from "./routes/buildingRoutes.js";
 import tenantRoutes from "./routes/tenantRoutes.js";
 import masterRoutes from "./routes/masterRoutes.js";
 import rentRoutes from "./routes/Rentroutes.js";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
+
+// Define __filename and __dirname for ES modules BEFORE using them
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
 
+// Serve uploaded tenant documents (Now correctly placed after app initialization)
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
   "https://hostel-management-system-sk.netlify.app",
-    "https://hrms-420.netlify.app",
+  "https://hrms-420.netlify.app",
   "http://localhost:5173",
   "http://localhost:3000",
 ];
@@ -27,7 +36,6 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-
       // ✅ Allow requests with no origin (Postman, mobile apps)
       if (!origin) return callback(null, true);
 
@@ -38,18 +46,6 @@ app.use(
         callback(null, true);
       } else {
         console.log("❌ Blocked by CORS:", origin); // DEBUG
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-  })
-);
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
         callback(new Error("Not allowed by CORS"));
       }
     },
