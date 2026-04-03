@@ -2,94 +2,134 @@ import express from "express";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import crypto from "crypto";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
 import jwt from "jsonwebtoken";
 
 const router = express.Router();
 
-// ── In-memory short-token store ──────────────────────────────────────────────
-// Maps  shortCode → { jwtToken, expiresAt }
-// For production, store in Redis or a DB collection instead.
-const shortTokenStore = new Map();
+// ── __dirname for ES modules ──────────────────────────────────────────────────
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
-// Cleanup expired entries periodically
+// ── In-memory short-token store ───────────────────────────────────────────────
+const shortTokenStore = new Map();
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of shortTokenStore.entries()) {
     if (v.expiresAt < now) shortTokenStore.delete(k);
   }
-}, 60 * 60 * 1000); // clean every hour
+}, 60 * 60 * 1000);
 
-// Configure Cloudinary
-let upload;
+// ── Cloudinary (optional) ─────────────────────────────────────────────────────
+const CLOUDINARY_READY = !!(
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET
+);
 
-try {
-  if (process.env.CLOUDINARY_CLOUD_NAME && 
-      process.env.CLOUDINARY_API_KEY && 
-      process.env.CLOUDINARY_API_SECRET) {
-    
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME.trim(),
-      api_key: process.env.CLOUDINARY_API_KEY.trim(),
-      api_secret: process.env.CLOUDINARY_API_SECRET.trim(),
-    });
-    
-    console.log("✅ Cloudinary configured");
-    
-    const storage = multer.memoryStorage();
-    upload = multer({ 
-      storage: storage,
-      limits: { fileSize: 5 * 1024 * 1024 },
-      fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|pdf/;
-        const extname = allowedTypes.test(file.originalname.toLowerCase());
-        const mimetype = allowedTypes.test(file.mimetype);
-        if (mimetype && extname) {
-          return cb(null, true);
-        }
-        cb(new Error("Only images and PDF files are allowed"));
-      }
-    });
-  } else {
-    console.warn("⚠️ Cloudinary credentials missing");
-    upload = multer({ 
-      storage: multer.memoryStorage(),
-      limits: { fileSize: 5 * 1024 * 1024 }
-    });
-  }
-} catch (error) {
-  console.error("❌ Error configuring upload:", error);
-  upload = multer({ 
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 5 * 1024 * 1024 }
+if (CLOUDINARY_READY) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME.trim(),
+    api_key:    process.env.CLOUDINARY_API_KEY.trim(),
+    api_secret: process.env.CLOUDINARY_API_SECRET.trim(),
   });
+  console.log("✅ Cloudinary configured — files will be uploaded to Cloudinary");
+} else {
+  console.log("📁 Cloudinary not configured — files will be saved to local disk (uploads/tenant-docs/)");
 }
 
-// Helper function to upload file to Cloudinary
-const uploadToCloudinary = async (fileBuffer, folder) => {
-  if (!fileBuffer) return null;
-  
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: folder,
-        resource_type: "auto",
-        allowed_formats: ["jpg", "jpeg", "png", "pdf"],
-      },
-      (error, result) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result.secure_url);
-        }
-      }
-    );
-    uploadStream.end(fileBuffer);
+// ── Local disk storage ────────────────────────────────────────────────────────
+// Files saved to:  <project-root>/uploads/tenant-docs/<filename>
+// Served at:       http://localhost:5000/uploads/tenant-docs/<filename>
+//
+// ⚠️  Add this ONE line to your server.js  (after app is created):
+//     import path from "path";
+//     app.use("/uploads", express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), "uploads")));
+//
+const UPLOAD_DIR = path.join(__dirname, "..", "uploads", "tenant-docs");
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  console.log("📁 Created upload directory:", UPLOAD_DIR);
+}
+
+const diskStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const ext    = path.extname(file.originalname).toLowerCase() || ".jpg";
+    const unique = `${Date.now()}-${crypto.randomBytes(2).toString("hex")}`;
+    cb(null, `${file.fieldname}-${unique}${ext}`);
+  },
+});
+
+// ── Single multer instance ────────────────────────────────────────────────────
+// memoryStorage when Cloudinary is ready (upload_stream needs a buffer)
+// diskStorage when Cloudinary is NOT configured (write straight to disk)
+const upload = multer({
+  storage: CLOUDINARY_READY ? multer.memoryStorage() : diskStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
+  fileFilter: (_req, file, cb) => {
+    const ok = /^image\/(jpeg|jpg|png|webp)|application\/pdf$/.test(file.mimetype);
+    ok ? cb(null, true) : cb(new Error("Only JPG, PNG, WEBP or PDF files are allowed"));
+  },
+});
+
+// ── Cloudinary upload helper ──────────────────────────────────────────────────
+const uploadToCloudinary = (buffer, folder) =>
+  new Promise((resolve, reject) => {
+    cloudinary.uploader
+      .upload_stream({ folder, resource_type: "auto" }, (err, result) =>
+        err ? reject(err) : resolve(result.secure_url)
+      )
+      .end(buffer);
   });
+
+// ── Shared document resolver ──────────────────────────────────────────────────
+// Returns { aadharFront, aadharBack, passportPhoto } — each a URL string or null.
+// Cloudinary path  → full https:// URL stored in DB
+// Disk path        → relative "/uploads/tenant-docs/<file>" stored in DB
+//                    Frontend prepends the backend base URL to display the image
+const resolveDocUrls = async (files) => {
+  const docs = { aadharFront: null, aadharBack: null, passportPhoto: null };
+  if (!files) return docs;
+
+  const resolve = async (fileArr, folder) => {
+    if (!fileArr || !fileArr[0]) return null;
+    const f = fileArr[0];
+
+    if (CLOUDINARY_READY) {
+      try {
+        const url = await uploadToCloudinary(f.buffer, folder);
+        console.log(`  ✅ Cloudinary → ${url}`);
+        return url;
+      } catch (err) {
+        console.error(`  ❌ Cloudinary failed for ${folder}:`, err.message);
+        return null;
+      }
+    }
+
+    // diskStorage — f.filename is set by multer
+    const relUrl = `/uploads/tenant-docs/${f.filename}`;
+    console.log(`  💾 Disk → ${relUrl}`);
+    return relUrl;
+  };
+
+  console.log("📎 Processing uploads:", Object.keys(files));
+  docs.aadharFront   = await resolve(files.aadharFront,   "tenant_documents/aadhar");
+  docs.aadharBack    = await resolve(files.aadharBack,    "tenant_documents/aadhar");
+  docs.passportPhoto = await resolve(files.passportPhoto, "tenant_documents/passport");
+
+  const saved   = Object.values(docs).filter(Boolean).length;
+  const missing = 3 - saved;
+  console.log(`📄 Documents: ${saved}/3 stored${missing ? ` — ${missing} missing` : " ✅"}`);
+
+  return docs;
 };
 
-// Auth middleware
+// ── Auth middleware ───────────────────────────────────────────────────────────
 const auth = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ message: "No token provided." });
@@ -101,54 +141,44 @@ const auth = (req, res, next) => {
   }
 };
 
-// ── PUBLIC ROUTES ─────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// PUBLIC ROUTES
+// ══════════════════════════════════════════════════════════════════════════════
 
-// Generate a SHORT onboarding link (8-char code instead of full JWT in URL)
+// Generate a SHORT onboarding link
 router.get("/generate-link", auth, (req, res) => {
-  // Full JWT stored server-side, only a short code goes in the URL
   const jwtToken = jwt.sign(
     { id: req.user.id, purpose: "tenant-registration" },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
-
-  // 8-character alphanumeric short code
   const shortCode = crypto.randomBytes(5).toString("base64url").slice(0, 8);
-  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
-
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
   shortTokenStore.set(shortCode, { jwtToken, expiresAt });
 
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  const link = `${frontendUrl}/tenant-register/${shortCode}`;
-
-  res.json({ link, expiresIn: "7 days" });
+  res.json({ link: `${frontendUrl}/tenant-register/${shortCode}`, expiresIn: "7 days" });
 });
 
-// Validate a short code (or legacy full JWT — backwards compatible)
+// Validate short code / legacy JWT
 router.get("/validate-link/:token", async (req, res) => {
   try {
     let decoded;
     const raw = req.params.token;
 
-    // Short code path (≤ 12 chars)
     if (raw.length <= 12) {
       const entry = shortTokenStore.get(raw);
-      if (!entry || entry.expiresAt < Date.now()) {
+      if (!entry || entry.expiresAt < Date.now())
         return res.status(401).json({ message: "Link is invalid or has expired." });
-      }
       decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
     } else {
-      // Legacy full-JWT path
       decoded = jwt.verify(raw, process.env.JWT_SECRET);
     }
 
-    if (decoded.purpose && decoded.purpose !== "tenant-registration") {
+    if (decoded.purpose && decoded.purpose !== "tenant-registration")
       return res.status(403).json({ message: "Invalid link purpose." });
-    }
 
-    const ownerId = decoded.id;
-
-    const buildings = await Building.find({ owner: ownerId })
+    const buildings = await Building.find({ owner: decoded.id })
       .select("buildingName address floors")
       .lean();
 
@@ -164,308 +194,223 @@ router.get("/validate-link/:token", async (req, res) => {
     }));
 
     res.json({ valid: true, buildings: sanitised });
-  } catch (err) {
+  } catch {
     res.status(401).json({ message: "Link is invalid or has expired." });
   }
 });
 
-// Self-registration via onboarding link
-router.post("/register-via-link", upload.fields([
-  { name: "aadharFront", maxCount: 1 },
-  { name: "aadharBack", maxCount: 1 },
-  { name: "passportPhoto", maxCount: 1 }
-]), async (req, res) => {
-  try {
-    const {
-      linkToken,
-      name, phone, email, fatherName, fatherPhone, permanentAddress, 
-      joiningDate, rentAmount, advanceAmount,
-      buildingId, floorId, roomId, bedId,
-    } = req.body;
-
-    // Resolve short code or legacy full JWT
-    let decoded;
+// ── Self-registration via onboarding link  (PUBLIC — no auth middleware) ──────
+router.post(
+  "/register-via-link",
+  upload.fields([
+    { name: "aadharFront",   maxCount: 1 },
+    { name: "aadharBack",    maxCount: 1 },
+    { name: "passportPhoto", maxCount: 1 },
+  ]),
+  async (req, res) => {
     try {
-      if (linkToken && linkToken.length <= 12) {
-        const entry = shortTokenStore.get(linkToken);
-        if (!entry || entry.expiresAt < Date.now()) {
-          return res.status(401).json({ message: "Registration link is invalid or expired." });
+      const {
+        linkToken,
+        name, phone, email, fatherName, fatherPhone, permanentAddress,
+        joiningDate, rentAmount, advanceAmount,
+        buildingId, floorId, roomId, bedId,
+      } = req.body;
+
+      // ── Resolve linkToken → ownerId ──────────────────────────────────────
+      let decoded;
+      try {
+        if (linkToken && linkToken.length <= 12) {
+          const entry = shortTokenStore.get(linkToken);
+          if (!entry || entry.expiresAt < Date.now())
+            return res.status(401).json({ message: "Registration link is invalid or expired." });
+          decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
+        } else {
+          decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
         }
-        decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
-      } else {
-        decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
-      }
-    } catch {
-      return res.status(401).json({ message: "Registration link is invalid or expired." });
-    }
-
-    const ownerId = decoded.id;
-
-    if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount) {
-      return res.status(400).json({
-        message: "name, phone, permanentAddress, joiningDate, rentAmount are required.",
-      });
-    }
-
-    let documents = {
-      aadharFront: null,
-      aadharBack: null,
-      passportPhoto: null
-    };
-
-    if (req.files) {
-      if (req.files.aadharFront && process.env.CLOUDINARY_CLOUD_NAME) {
-        try {
-          documents.aadharFront = await uploadToCloudinary(
-            req.files.aadharFront[0].buffer,
-            "tenant_documents/aadhar"
-          );
-        } catch (err) {
-          console.error("Upload error:", err.message);
-        }
-      }
-      
-      if (req.files.aadharBack && process.env.CLOUDINARY_CLOUD_NAME) {
-        try {
-          documents.aadharBack = await uploadToCloudinary(
-            req.files.aadharBack[0].buffer,
-            "tenant_documents/aadhar"
-          );
-        } catch (err) {
-          console.error("Upload error:", err.message);
-        }
-      }
-      
-      if (req.files.passportPhoto && process.env.CLOUDINARY_CLOUD_NAME) {
-        try {
-          documents.passportPhoto = await uploadToCloudinary(
-            req.files.passportPhoto[0].buffer,
-            "tenant_documents/passport"
-          );
-        } catch (err) {
-          console.error("Upload error:", err.message);
-        }
-      }
-    }
-
-    const advance = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
-
-    let allocationInfo = {};
-
-    if (buildingId && floorId && roomId && bedId) {
-      const building = await Building.findOne({ _id: buildingId, owner: ownerId });
-      if (!building) return res.status(404).json({ message: "Building not found." });
-
-      const floor = building.floors.id(floorId);
-      if (!floor) return res.status(404).json({ message: "Floor not found." });
-
-      const room = floor.rooms.id(roomId);
-      if (!room) return res.status(404).json({ message: "Room not found." });
-
-      const bed = room.beds.id(bedId);
-      if (!bed) return res.status(404).json({ message: "Bed not found." });
-
-      if (bed.status === "Occupied") {
-        return res.status(400).json({ message: "That bed was just taken. Please choose another." });
+      } catch {
+        return res.status(401).json({ message: "Registration link is invalid or expired." });
       }
 
-      allocationInfo = {
-        buildingName: building.buildingName,
-        floorNumber: floor.floorNumber,
-        roomNumber: room.roomNumber,
-        bedNumber: bed.bedNumber,
-      };
+      // !! Never use req.user.id here — this is a PUBLIC route, req.user is undefined !!
+      const ownerId = decoded.id;
 
+      if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount)
+        return res.status(400).json({ message: "name, phone, permanentAddress, joiningDate, rentAmount are required." });
+
+      const documents = await resolveDocUrls(req.files);
+      const advance   = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
+
+      // ── With room allocation ─────────────────────────────────────────────
+      if (buildingId && floorId && roomId && bedId) {
+        const building = await Building.findOne({ _id: buildingId, owner: ownerId });
+        if (!building) return res.status(404).json({ message: "Building not found." });
+
+        const floor = building.floors.id(floorId);
+        if (!floor) return res.status(404).json({ message: "Floor not found." });
+
+        const room = floor.rooms.id(roomId);
+        if (!room) return res.status(404).json({ message: "Room not found." });
+
+        const bed = room.beds.id(bedId);
+        if (!bed) return res.status(404).json({ message: "Bed not found." });
+
+        if (bed.status === "Occupied")
+          return res.status(400).json({ message: "That bed was just taken. Please choose another." });
+
+        const allocationInfo = {
+          buildingName: building.buildingName,
+          floorNumber:  floor.floorNumber,
+          roomNumber:   room.roomNumber,
+          bedNumber:    bed.bedNumber,
+        };
+
+        const tenant = new Tenant({
+          owner: ownerId,
+          name: name.trim(),
+          phone: phone.trim(),
+          email:       email       ? email.trim()       : null,
+          fatherName:  fatherName  ? fatherName.trim()  : null,
+          fatherPhone: fatherPhone ? fatherPhone.trim() : null,
+          permanentAddress: permanentAddress.trim(),
+          joiningDate,
+          rentAmount: Number(rentAmount),
+          advanceAmount: advance,
+          documents,
+          buildingId, floorId, roomId, bedId, allocationInfo,
+          source: "onboarding-link",
+        });
+        await tenant.save();
+
+        bed.status   = "Occupied";
+        bed.tenantId = tenant._id;
+        await building.save();
+
+        return res.status(201).json({
+          message: "Registered successfully! Your room has been allocated.",
+          tenant,
+        });
+      }
+
+      // ── Without room allocation ──────────────────────────────────────────
       const tenant = new Tenant({
-        owner: ownerId, name, phone, email, fatherName, fatherPhone, 
-        permanentAddress, joiningDate, rentAmount, advanceAmount: advance, documents,
-        buildingId, floorId, roomId, bedId, allocationInfo,
+        owner: ownerId,
+        name: name.trim(),
+        phone: phone.trim(),
+        email:       email       ? email.trim()       : null,
+        fatherName:  fatherName  ? fatherName.trim()  : null,
+        fatherPhone: fatherPhone ? fatherPhone.trim() : null,
+        permanentAddress: permanentAddress.trim(),
+        joiningDate,
+        rentAmount: Number(rentAmount),
+        advanceAmount: advance,
+        documents,
         source: "onboarding-link",
       });
       await tenant.save();
 
-      bed.status = "Occupied";
-      bed.tenantId = tenant._id;
-      await building.save();
-
-      return res.status(201).json({
-        message: "Registered successfully! Your room has been allocated.",
+      res.status(201).json({
+        message: "Registered successfully! Your manager will assign a room shortly.",
         tenant,
       });
+    } catch (err) {
+      console.error("❌ register-via-link error:", err);
+      res.status(500).json({ message: "Server error.", error: err.message });
     }
-
-    const tenant = new Tenant({
-      owner: ownerId, name, phone, email, fatherName, fatherPhone,
-      permanentAddress, joiningDate, rentAmount, advanceAmount: advance, documents,
-      source: "onboarding-link",
-    });
-    await tenant.save();
-
-    res.status(201).json({
-      message: "Registered successfully! Your manager will assign a room shortly.",
-      tenant,
-    });
-  } catch (err) {
-    console.error("Registration error:", err);
-    res.status(500).json({ message: "Server error.", error: err.message });
   }
-});
+);
 
-// ── PROTECTED ROUTES ──────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// PROTECTED ROUTES
+// ══════════════════════════════════════════════════════════════════════════════
 
-// Add tenant (admin)
-router.post("/", auth, upload.fields([
-  { name: "aadharFront", maxCount: 1 },
-  { name: "aadharBack", maxCount: 1 },
-  { name: "passportPhoto", maxCount: 1 }
-]), async (req, res) => {
-  try {
-    const { 
-      name, phone, email, fatherName, fatherPhone, permanentAddress, 
-      joiningDate, rentAmount, advanceAmount, buildingId, floorId, roomId, bedId 
-    } = req.body;
+// Add tenant — admin (AddCandidate form)
+router.post(
+  "/",
+  auth,
+  upload.fields([
+    { name: "aadharFront",   maxCount: 1 },
+    { name: "aadharBack",    maxCount: 1 },
+    { name: "passportPhoto", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const {
+        name, phone, email, fatherName, fatherPhone, permanentAddress,
+        joiningDate, rentAmount, advanceAmount,
+        buildingId, floorId, roomId, bedId,
+      } = req.body;
 
-    if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount) {
-      return res.status(400).json({ 
-        message: "Name, phone, permanentAddress, joiningDate, rentAmount are required." 
-      });
-    }
+      if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount)
+        return res.status(400).json({ message: "Name, phone, permanentAddress, joiningDate, rentAmount are required." });
 
-    let documents = {
-      aadharFront: null,
-      aadharBack: null,
-      passportPhoto: null
-    };
+      const documents = await resolveDocUrls(req.files);
+      const advance   = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
 
-    if (req.files) {
-      if (req.files.aadharFront) {
-        if (process.env.CLOUDINARY_CLOUD_NAME) {
-          try {
-            documents.aadharFront = await uploadToCloudinary(
-              req.files.aadharFront[0].buffer,
-              "tenant_documents/aadhar"
-            );
-          } catch { /* fall back to base64 */ }
-        }
-        if (!documents.aadharFront) {
-          documents.aadharFront = `data:${req.files.aadharFront[0].mimetype};base64,${req.files.aadharFront[0].buffer.toString('base64')}`;
-        }
+      if (buildingId && floorId && roomId && bedId &&
+          buildingId !== "" && floorId !== "" && roomId !== "" && bedId !== "") {
+
+        const building = await Building.findOne({ _id: buildingId, owner: req.user.id });
+        if (!building) return res.status(404).json({ message: "Building not found." });
+
+        const floor = building.floors.id(floorId);
+        if (!floor) return res.status(404).json({ message: "Floor not found." });
+
+        const room = floor.rooms.id(roomId);
+        if (!room) return res.status(404).json({ message: "Room not found." });
+
+        const bed = room.beds.id(bedId);
+        if (!bed) return res.status(404).json({ message: "Bed not found." });
+
+        if (bed.status === "Occupied")
+          return res.status(400).json({ message: "Bed is already occupied." });
+
+        const allocationInfo = {
+          buildingName: building.buildingName,
+          floorNumber:  floor.floorNumber,
+          roomNumber:   room.roomNumber,
+          bedNumber:    bed.bedNumber,
+        };
+
+        const tenant = new Tenant({
+          owner: req.user.id,
+          name: name.trim(), phone: phone.trim(),
+          email:       email       ? email.trim()       : null,
+          fatherName:  fatherName  ? fatherName.trim()  : null,
+          fatherPhone: fatherPhone ? fatherPhone.trim() : null,
+          permanentAddress: permanentAddress.trim(),
+          joiningDate, rentAmount: Number(rentAmount), advanceAmount: advance,
+          documents, buildingId, floorId, roomId, bedId, allocationInfo,
+        });
+        await tenant.save();
+
+        bed.status   = "Occupied";
+        bed.tenantId = tenant._id;
+        await building.save();
+
+        return res.status(201).json({ message: "Tenant added and bed allocated.", tenant });
       }
-      if (req.files.aadharBack) {
-        if (process.env.CLOUDINARY_CLOUD_NAME) {
-          try {
-            documents.aadharBack = await uploadToCloudinary(
-              req.files.aadharBack[0].buffer,
-              "tenant_documents/aadhar"
-            );
-          } catch { /* fall back to base64 */ }
-        }
-        if (!documents.aadharBack) {
-          documents.aadharBack = `data:${req.files.aadharBack[0].mimetype};base64,${req.files.aadharBack[0].buffer.toString('base64')}`;
-        }
-      }
-      if (req.files.passportPhoto) {
-        if (process.env.CLOUDINARY_CLOUD_NAME) {
-          try {
-            documents.passportPhoto = await uploadToCloudinary(
-              req.files.passportPhoto[0].buffer,
-              "tenant_documents/passport"
-            );
-          } catch { /* fall back to base64 */ }
-        }
-        if (!documents.passportPhoto) {
-          documents.passportPhoto = `data:${req.files.passportPhoto[0].mimetype};base64,${req.files.passportPhoto[0].buffer.toString('base64')}`;
-        }
-      }
-    }
-
-    const advance = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
-
-    let allocationInfo = {};
-    
-    if (buildingId && floorId && roomId && bedId && 
-        buildingId !== "" && floorId !== "" && roomId !== "" && bedId !== "") {
-      
-      const building = await Building.findOne({ _id: buildingId, owner: req.user.id });
-      if (!building) return res.status(404).json({ message: "Building not found." });
-      
-      const floor = building.floors.id(floorId);
-      if (!floor) return res.status(404).json({ message: "Floor not found." });
-      
-      const room = floor.rooms.id(roomId);
-      if (!room) return res.status(404).json({ message: "Room not found." });
-      
-      const bed = room.beds.id(bedId);
-      if (!bed) return res.status(404).json({ message: "Bed not found." });
-      
-      if (bed.status === "Occupied") {
-        return res.status(400).json({ message: "Bed is already occupied." });
-      }
-
-      allocationInfo = {
-        buildingName: building.buildingName,
-        floorNumber: floor.floorNumber,
-        roomNumber: room.roomNumber,
-        bedNumber: bed.bedNumber,
-      };
 
       const tenant = new Tenant({
-        owner: req.user.id, 
-        name: name.trim(), 
-        phone: phone.trim(), 
-        email: email ? email.trim() : null, 
-        fatherName: fatherName ? fatherName.trim() : null, 
+        owner: req.user.id,
+        name: name.trim(), phone: phone.trim(),
+        email:       email       ? email.trim()       : null,
+        fatherName:  fatherName  ? fatherName.trim()  : null,
         fatherPhone: fatherPhone ? fatherPhone.trim() : null,
-        permanentAddress: permanentAddress.trim(), 
-        joiningDate, 
-        rentAmount: Number(rentAmount),
-        advanceAmount: advance,
+        permanentAddress: permanentAddress.trim(),
+        joiningDate, rentAmount: Number(rentAmount), advanceAmount: advance,
         documents,
-        buildingId, 
-        floorId, 
-        roomId, 
-        bedId, 
-        allocationInfo,
       });
-      
       await tenant.save();
+      res.status(201).json({ message: "Tenant added successfully.", tenant });
 
-      bed.status = "Occupied";
-      bed.tenantId = tenant._id;
-      await building.save();
-
-      return res.status(201).json({ 
-        message: "Tenant added and bed allocated.", 
-        tenant 
-      });
+    } catch (err) {
+      console.error("❌ POST /tenants error:", err.message);
+      res.status(500).json({ message: "Server error.", error: err.message });
     }
-
-    const tenant = new Tenant({ 
-      owner: req.user.id, 
-      name: name.trim(), 
-      phone: phone.trim(), 
-      email: email ? email.trim() : null, 
-      fatherName: fatherName ? fatherName.trim() : null, 
-      fatherPhone: fatherPhone ? fatherPhone.trim() : null,
-      permanentAddress: permanentAddress.trim(), 
-      joiningDate, 
-      rentAmount: Number(rentAmount),
-      advanceAmount: advance,
-      documents 
-    });
-    
-    await tenant.save();
-    res.status(201).json({ message: "Tenant added successfully.", tenant });
-    
-  } catch (err) {
-    console.error("Error adding tenant:", err.message);
-    res.status(500).json({ 
-      message: "Server error.", 
-      error: err.message
-    });
   }
-});
+);
 
+// Get all tenants
 router.get("/", auth, async (req, res) => {
   try {
     const filter = { owner: req.user.id };
@@ -473,73 +418,67 @@ router.get("/", auth, async (req, res) => {
     const tenants = await Tenant.find(filter).sort({ createdAt: -1 });
     res.json(tenants);
   } catch (err) {
-    console.error("Error fetching tenants:", err);
     res.status(500).json({ message: "Server error.", error: err.message });
   }
 });
 
+// Get single tenant
 router.get("/:id", auth, async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
     if (!tenant) return res.status(404).json({ message: "Tenant not found." });
     res.json(tenant);
   } catch (err) {
-    console.error("Error fetching tenant:", err);
     res.status(500).json({ message: "Server error.", error: err.message });
   }
 });
 
-router.put("/:id", auth, upload.fields([
-  { name: "aadharFront", maxCount: 1 },
-  { name: "aadharBack", maxCount: 1 },
-  { name: "passportPhoto", maxCount: 1 }
-]), async (req, res) => {
-  try {
-    const { name, phone, email, fatherName, fatherPhone, permanentAddress, joiningDate, rentAmount, advanceAmount, status } = req.body;
-    
-    const updateData = { 
-      name, phone, email, fatherName, fatherPhone, permanentAddress, 
-      joiningDate, rentAmount: rentAmount ? Number(rentAmount) : undefined,
-      advanceAmount: advanceAmount !== undefined ? Number(advanceAmount) : undefined,
-      status 
-    };
-    
-    if (req.files && process.env.CLOUDINARY_CLOUD_NAME) {
-      updateData.documents = {};
-      if (req.files.aadharFront) {
-        updateData.documents.aadharFront = await uploadToCloudinary(
-          req.files.aadharFront[0].buffer,
-          "tenant_documents/aadhar"
-        );
+// Update tenant
+router.put(
+  "/:id",
+  auth,
+  upload.fields([
+    { name: "aadharFront",   maxCount: 1 },
+    { name: "aadharBack",    maxCount: 1 },
+    { name: "passportPhoto", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const {
+        name, phone, email, fatherName, fatherPhone, permanentAddress,
+        joiningDate, rentAmount, advanceAmount, status,
+      } = req.body;
+
+      const updateData = {
+        name, phone, email, fatherName, fatherPhone, permanentAddress, joiningDate,
+        rentAmount:    rentAmount    ? Number(rentAmount)    : undefined,
+        advanceAmount: advanceAmount !== undefined ? Number(advanceAmount) : undefined,
+        status,
+      };
+
+      if (req.files && Object.keys(req.files).length > 0) {
+        const newDocs = await resolveDocUrls(req.files);
+        if (newDocs.aadharFront)   updateData["documents.aadharFront"]   = newDocs.aadharFront;
+        if (newDocs.aadharBack)    updateData["documents.aadharBack"]    = newDocs.aadharBack;
+        if (newDocs.passportPhoto) updateData["documents.passportPhoto"] = newDocs.passportPhoto;
       }
-      if (req.files.aadharBack) {
-        updateData.documents.aadharBack = await uploadToCloudinary(
-          req.files.aadharBack[0].buffer,
-          "tenant_documents/aadhar"
-        );
-      }
-      if (req.files.passportPhoto) {
-        updateData.documents.passportPhoto = await uploadToCloudinary(
-          req.files.passportPhoto[0].buffer,
-          "tenant_documents/passport"
-        );
-      }
+
+      const tenant = await Tenant.findOneAndUpdate(
+        { _id: req.params.id, owner: req.user.id },
+        updateData,
+        { new: true, runValidators: true }
+      );
+
+      if (!tenant) return res.status(404).json({ message: "Tenant not found." });
+      res.json({ message: "Tenant updated.", tenant });
+    } catch (err) {
+      console.error("Error updating tenant:", err);
+      res.status(500).json({ message: "Server error.", error: err.message });
     }
-    
-    const tenant = await Tenant.findOneAndUpdate(
-      { _id: req.params.id, owner: req.user.id },
-      updateData,
-      { new: true, runValidators: true }
-    );
-    
-    if (!tenant) return res.status(404).json({ message: "Tenant not found." });
-    res.json({ message: "Tenant updated.", tenant });
-  } catch (err) {
-    console.error("Error updating tenant:", err);
-    res.status(500).json({ message: "Server error.", error: err.message });
   }
-});
+);
 
+// Vacate tenant
 router.delete("/:id/vacate", auth, async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
@@ -551,19 +490,15 @@ router.delete("/:id/vacate", auth, async (req, res) => {
         const floor = building.floors.id(tenant.floorId);
         const room  = floor?.rooms.id(tenant.roomId);
         const bed   = room?.beds.id(tenant.bedId);
-        if (bed) {
-          bed.status   = "Available";
-          bed.tenantId = null;
-          await building.save();
-        }
+        if (bed) { bed.status = "Available"; bed.tenantId = null; await building.save(); }
       }
     }
 
-    tenant.status = "Inactive";
-    tenant.buildingId = null;
-    tenant.floorId = null;
-    tenant.roomId = null;
-    tenant.bedId = null;
+    tenant.status         = "Inactive";
+    tenant.buildingId     = null;
+    tenant.floorId        = null;
+    tenant.roomId         = null;
+    tenant.bedId          = null;
     tenant.allocationInfo = {};
     await tenant.save();
 

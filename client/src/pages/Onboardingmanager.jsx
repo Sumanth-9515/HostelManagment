@@ -7,6 +7,19 @@
 import { useState, useEffect } from "react";
 import { API, authHeaders } from "../api.js";
 
+// Backend base URL (e.g. "http://localhost:5000") — strips any trailing /api path
+// so that /uploads/tenant-docs/xxx.jpg resolves correctly.
+const BACKEND_URL = API.replace(/\/api.*$/, "");
+
+// Resolve a document URL stored in DB:
+//   - Cloudinary / external http(s) URL → use as-is
+//   - Relative disk path "/uploads/..." → prepend backend origin
+const docUrl = (src) => {
+  if (!src) return null;
+  if (src.startsWith("http")) return src;
+  return `${BACKEND_URL}${src}`;
+};
+
 /* ─── tiny style helpers ────────────────────────────────────────── */
 const card = {
   background: "#fff", borderRadius: 16,
@@ -422,7 +435,7 @@ const generateLink = async () => {
                             overflow: "hidden",
                           }}>
                             {t.documents?.passportPhoto
-                              ? <img src={t.documents.passportPhoto} alt={t.name}
+                              ? <img src={docUrl(t.documents.passportPhoto)} alt={t.name}
                                   style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                               : t.name?.charAt(0).toUpperCase()
                             }
@@ -493,40 +506,64 @@ const generateLink = async () => {
                 textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 14 }}>
                 Document Overview
               </h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
-                {filtered.filter(t => t.documents?.aadharFront || t.documents?.passportPhoto).map(t => (
-                  <div key={t._id + "-docs"} style={{
-                    padding: 14, border: "1.5px solid #e2e8f0", borderRadius: 12,
-                    background: "#fafbfc",
-                  }}>
-                    <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 13, marginBottom: 10 }}>
-                      {t.name}
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      {[
-                        { src: t.documents?.passportPhoto, label: "Photo" },
-                        { src: t.documents?.aadharFront,   label: "Aadhar F" },
-                        { src: t.documents?.aadharBack,    label: "Aadhar B" },
-                      ].map(({ src, label }) => (
-                        src ? (
-                          <div key={label} style={{ textAlign: "center" }}>
-                            <a href={src} target="_blank" rel="noreferrer">
-                              <img src={src} alt={label} style={{
-                                width: 52, height: 52, objectFit: "cover",
-                                borderRadius: 8, border: "2px solid #e2e8f0",
-                                display: "block",
-                              }} />
-                            </a>
-                            <span style={{ fontSize: 9, color: "#94a3b8", marginTop: 3, display: "block" }}>{label}</span>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 12 }}>
+                {filtered.map(t => {
+                  const docs = [
+                    { src: docUrl(t.documents?.passportPhoto), label: "Passport Photo", icon: "🖼️" },
+                    { src: docUrl(t.documents?.aadharFront),   label: "Aadhar Front",   icon: "🪪" },
+                    { src: docUrl(t.documents?.aadharBack),    label: "Aadhar Back",    icon: "🪪" },
+                  ];
+                  const allUploaded  = docs.every(d => !!d.src);
+                  const noneUploaded = docs.every(d => !d.src);
+                  return (
+                    <div key={t._id + "-docs"} style={{
+                      padding: 14, borderRadius: 12, background: "#fafbfc",
+                      border: `1.5px solid ${allUploaded ? "#bbf7d0" : noneUploaded ? "#fecaca" : "#fde68a"}`,
+                    }}>
+                      {/* Header row */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                        <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 13 }}>{t.name}</div>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
+                          background: allUploaded ? "#d1fae5" : noneUploaded ? "#fee2e2" : "#fef3c7",
+                          color: allUploaded ? "#065f46" : noneUploaded ? "#991b1b" : "#92400e",
+                        }}>
+                          {allUploaded ? "✓ All Docs" : noneUploaded ? "✗ No Docs" : "⚠ Partial"}
+                        </span>
+                      </div>
+                      {/* Doc thumbnails */}
+                      <div style={{ display: "flex", gap: 10 }}>
+                        {docs.map(({ src, label, icon }) => (
+                          <div key={label} style={{ textAlign: "center", flex: 1 }}>
+                            {src ? (
+                              <a href={src} target="_blank" rel="noreferrer">
+                                <img src={src} alt={label} style={{
+                                  width: "100%", maxWidth: 56, height: 52, objectFit: "cover",
+                                  borderRadius: 8, border: "2px solid #10b981",
+                                  display: "block", margin: "0 auto",
+                                }} />
+                              </a>
+                            ) : (
+                              <div style={{
+                                width: "100%", maxWidth: 56, height: 52, margin: "0 auto",
+                                borderRadius: 8, border: "2px dashed #e2e8f0",
+                                background: "#f8fafc", display: "flex",
+                                alignItems: "center", justifyContent: "center",
+                                fontSize: 18, color: "#cbd5e1",
+                              }}>{icon}</div>
+                            )}
+                            <span style={{
+                              fontSize: 9, marginTop: 4, display: "block",
+                              color: src ? "#10b981" : "#ef4444", fontWeight: 600,
+                            }}>
+                              {src ? "✓ " : "✗ "}{label}
+                            </span>
                           </div>
-                        ) : null
-                      ))}
-                      {!t.documents?.aadharFront && !t.documents?.passportPhoto && (
-                        <span style={{ fontSize: 12, color: "#94a3b8" }}>No documents uploaded</span>
-                      )}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </>
