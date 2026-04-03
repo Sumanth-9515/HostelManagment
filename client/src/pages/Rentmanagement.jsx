@@ -177,10 +177,144 @@ function TenantRow({ item, onSelect, onPayNow }) {
   );
 }
 
-function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
+// ─── Room Allocator (used inside Edit mode) ───────────────────────────────────
+function RoomAllocator({ currentAlloc, onSelect }) {
+  const [buildings, setBuildings] = useState([]);
+  const [selectedBuilding, setSelectedBuilding] = useState("");
+  const [selectedFloor, setSelectedFloor] = useState("");
+  const [selectedRoom, setSelectedRoom] = useState("");
+  const [selectedBed, setSelectedBed] = useState("");
+  const [loadingBuildings, setLoadingBuildings] = useState(true);
+
+  const floors = buildings.find((b) => b._id === selectedBuilding)?.floors || [];
+  const rooms = floors.find((f) => f._id === selectedFloor)?.rooms || [];
+  const beds = rooms.find((r) => r._id === selectedRoom)?.beds.filter((b) => b.status === "Available") || [];
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/buildings`, { headers: authHeader() });
+        const d = await r.json();
+        setBuildings(Array.isArray(d) ? d : []);
+      } catch {}
+      setLoadingBuildings(false);
+    })();
+  }, []);
+
+  // Propagate selection upward whenever bed is chosen
+  useEffect(() => {
+    if (!selectedBed || !selectedRoom || !selectedFloor || !selectedBuilding) return;
+    const building = buildings.find((b) => b._id === selectedBuilding);
+    const floor = building?.floors.find((f) => f._id === selectedFloor);
+    const room = floor?.rooms.find((r) => r._id === selectedRoom);
+    const bed = room?.beds.find((b) => b._id === selectedBed);
+    if (building && floor && room && bed) {
+      onSelect({
+        buildingId: building._id,
+        floorId: floor._id,
+        roomId: room._id,
+        bedId: bed._id,
+        allocationInfo: {
+          buildingName: building.buildingName,
+          floorNumber: floor.floorNumber,
+          roomNumber: room.roomNumber,
+          bedNumber: bed.bedNumber,
+        },
+      });
+    }
+  }, [selectedBed]);
+
+  const selectClass = "w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-amber-400 disabled:bg-gray-50 disabled:text-gray-400";
+
+  if (loadingBuildings) return <div className="text-xs text-gray-400 animate-pulse py-2">Loading buildings…</div>;
+
+  return (
+    <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+      <p className="text-amber-700 text-xs font-semibold uppercase tracking-wide mb-1">Select New Bed</p>
+
+      <div>
+        <label className="text-gray-500 text-[11px] uppercase tracking-wide">Building</label>
+        <select value={selectedBuilding} onChange={(e) => { setSelectedBuilding(e.target.value); setSelectedFloor(""); setSelectedRoom(""); setSelectedBed(""); onSelect(null); }} className={selectClass}>
+          <option value="">— Choose Building —</option>
+          {buildings.map((b) => <option key={b._id} value={b._id}>{b.buildingName}</option>)}
+        </select>
+      </div>
+
+      <div>
+        <label className="text-gray-500 text-[11px] uppercase tracking-wide">Floor</label>
+        <select value={selectedFloor} onChange={(e) => { setSelectedFloor(e.target.value); setSelectedRoom(""); setSelectedBed(""); onSelect(null); }} disabled={!selectedBuilding} className={selectClass}>
+          <option value="">— Choose Floor —</option>
+          {floors.map((f) => <option key={f._id} value={f._id}>{f.floorName || `Floor ${f.floorNumber}`}</option>)}
+        </select>
+      </div>
+
+      <div>
+        <label className="text-gray-500 text-[11px] uppercase tracking-wide">Room</label>
+        <select value={selectedRoom} onChange={(e) => { setSelectedRoom(e.target.value); setSelectedBed(""); onSelect(null); }} disabled={!selectedFloor} className={selectClass}>
+          <option value="">— Choose Room —</option>
+          {rooms.map((r) => <option key={r._id} value={r._id}>Room {r.roomNumber} ({r.shareType}-share)</option>)}
+        </select>
+      </div>
+
+      <div>
+        <label className="text-gray-500 text-[11px] uppercase tracking-wide">Available Bed</label>
+        <select value={selectedBed} onChange={(e) => setSelectedBed(e.target.value)} disabled={!selectedRoom} className={selectClass}>
+          <option value="">— Choose Bed —</option>
+          {beds.length === 0 && selectedRoom ? <option disabled>No available beds in this room</option> : beds.map((b) => <option key={b._id} value={b._id}>Bed {b.bedNumber}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+// ─── Vacate Confirmation Modal ────────────────────────────────────────────────
+function VacateConfirmModal({ tenantName, onConfirm, onCancel, loading }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+        <div className="px-6 pt-6 pb-4 text-center">
+          <div className="w-14 h-14 rounded-full bg-rose-100 border-2 border-rose-300 flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl">🚪</span>
+          </div>
+          <h3 className="text-gray-900 font-bold text-lg mb-1">Vacate Tenant?</h3>
+          <p className="text-gray-500 text-sm">
+            Are you sure you want to vacate <span className="font-semibold text-gray-800">{tenantName}</span>?
+          </p>
+          <p className="text-rose-500 text-xs mt-2 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+            ⚠️ This will free their bed and mark them as Inactive. This action cannot be undone.
+          </p>
+        </div>
+        <div className="flex gap-3 px-6 pb-6">
+          <button onClick={onCancel} disabled={loading} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm transition-colors active:scale-95 disabled:opacity-50">
+            {loading ? "Vacating…" : "Yes, Vacate"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tenant Detail Modal ──────────────────────────────────────────────────────
+function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenantUpdated }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewingDoc, setViewingDoc] = useState(null);
+
+  // Edit state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [editRoomMode, setEditRoomMode] = useState(false);
+  const [newAllocation, setNewAllocation] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  // Vacate state
+  const [showVacateConfirm, setShowVacateConfirm] = useState(false);
+  const [vacating, setVacating] = useState(false);
+  const [vacateError, setVacateError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -191,6 +325,83 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
 
   useEffect(() => { load(); }, [load, onPaymentDone]);
 
+  // Populate edit form when data loads
+  useEffect(() => {
+    if (data?.tenant) {
+      const t = data.tenant;
+      setEditForm({
+        name: t.name || "",
+        phone: t.phone || "",
+        email: t.email || "",
+        fatherName: t.fatherName || "",
+        fatherPhone: t.fatherPhone || "",
+        permanentAddress: t.permanentAddress || "",
+        joiningDate: t.joiningDate ? t.joiningDate.slice(0, 10) : "",
+        rentAmount: t.rentAmount || "",
+      });
+    }
+  }, [data]);
+
+  const handleEditField = (key, val) => setEditForm((f) => ({ ...f, [key]: val }));
+
+  const handleSaveEdit = async () => {
+    setSaving(true); setSaveError("");
+    try {
+      // 1. Update tenant basic fields
+      const r = await fetch(`${API}/tenants/${tenantId}`, {
+        method: "PUT",
+        headers: authHeader(),
+        body: JSON.stringify({
+          name: editForm.name,
+          phone: editForm.phone,
+          email: editForm.email,
+          fatherName: editForm.fatherName,
+          fatherPhone: editForm.fatherPhone,
+          permanentAddress: editForm.permanentAddress,
+          joiningDate: editForm.joiningDate,
+          rentAmount: Number(editForm.rentAmount),
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message || "Failed to update tenant.");
+
+      // 2. If room changed, reallocate bed
+      if (editRoomMode && newAllocation) {
+        const rb = await fetch(`${API}/tenants/${tenantId}/reallocate`, {
+          method: "PUT",
+          headers: authHeader(),
+          body: JSON.stringify(newAllocation),
+        });
+        const rd = await rb.json();
+        if (!rb.ok) throw new Error(rd.message || "Failed to reallocate bed.");
+      }
+
+      setIsEditing(false);
+      setEditRoomMode(false);
+      setNewAllocation(null);
+      await load();
+      if (onTenantUpdated) onTenantUpdated();
+    } catch (e) {
+      setSaveError(e.message);
+    }
+    setSaving(false);
+  };
+
+  const handleVacate = async () => {
+    setVacating(true); setVacateError("");
+    try {
+      const r = await fetch(`${API}/tenants/${tenantId}/vacate`, { method: "DELETE", headers: authHeader() });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message || "Failed to vacate.");
+      setShowVacateConfirm(false);
+      if (onTenantUpdated) onTenantUpdated();
+      onClose();
+    } catch (e) {
+      setVacateError(e.message);
+    }
+    setVacating(false);
+  };
+
   if (!data && !loading) return null;
 
   const { tenant, buildingDetails, currentRecord, remaining, history, pendingMonths, arrearsTotal, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = data || {};
@@ -199,170 +410,349 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone }) {
 
   const handleViewDocument = (docUrl) => { if (docUrl) setViewingDoc(docUrl); };
 
+  const inputClass = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-900 text-sm focus:outline-none focus:border-amber-400 transition-colors";
+  const readonlyClass = "w-full bg-white rounded-xl p-3 border border-gray-200";
+
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-        <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl">
-          <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
-            <h2 className="text-gray-900 font-bold text-lg">Tenant Details</h2>
-            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm">
+        {/* Modal container — full screen on mobile, max-w-2xl centered on larger screens */}
+        <div className="relative w-full sm:max-w-2xl h-[95dvh] sm:h-auto sm:max-h-[92vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+
+          {/* Sticky Header */}
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-white shrink-0">
+            <h2 className="text-gray-900 font-bold text-base sm:text-lg">
+              {isEditing ? "✏️ Edit Tenant" : "Tenant Details"}
+            </h2>
+            <div className="flex items-center gap-2">
+              {!isEditing && !loading && (
+                <>
+                  {/* Edit button */}
+                  <button
+                    onClick={() => { setIsEditing(true); setSaveError(""); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-500 border border-amber-200 text-amber-700 hover:text-white transition-colors"
+                  >
+                    ✏️ Edit
+                  </button>
+                  {/* Vacate button */}
+                  <button
+                    onClick={() => setShowVacateConfirm(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-500 border border-rose-200 text-rose-700 hover:text-white transition-colors"
+                  >
+                    🚪 Vacate
+                  </button>
+                </>
+              )}
+              {isEditing && (
+                <button
+                  onClick={() => { setIsEditing(false); setEditRoomMode(false); setNewAllocation(null); setSaveError(""); }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-600 transition-colors"
+                >
+                  ✕ Cancel
+                </button>
+              )}
+              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors text-lg">✕</button>
+            </div>
           </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" /></div>
-          ) : (
-            <div className="p-6 space-y-6">
+          {/* Scrollable Body */}
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" /></div>
+            ) : (
+              <div className="p-4 sm:p-6 space-y-5">
 
-              {hasPreviousPending && (
-                <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="relative flex h-4 w-4 shrink-0"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500" /></span>
-                    <h4 className="text-rose-700 font-bold text-sm">Carry-Forward Dues — {pendingMonthsCount} Month{pendingMonthsCount > 1 ? "s" : ""} Unpaid</h4>
-                  </div>
-                  <div className="text-center mb-3">
-                    <p className="text-rose-400 text-xs uppercase tracking-wide">Total Arrears (Previous Months)</p>
-                    <p className="text-rose-600 text-3xl font-black">{fmt(arrearsTotal)}</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    {pendingMonths.map((pm) => {
-                      const pmRemaining = pm.rentAmount - pm.paidAmount;
-                      return (
-                        <div key={pm.monthYear} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-rose-200">
-                          <div><span className="text-gray-700 text-xs font-medium">{fmtMonthYear(pm.dueDate)}</span>{pm.paidAmount > 0 && <span className="text-gray-400 text-[10px] ml-2">(paid {fmt(pm.paidAmount)})</span>}</div>
-                          <div className="flex items-center gap-2">
-                            {pill(pm.status)}<span className="text-rose-600 text-xs font-bold">{fmt(pmRemaining)}</span>
-                            <button onClick={() => onPayNow(tenant._id, payable, pm.monthYear)} className="text-[10px] px-2 py-0.5 rounded-md bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors">Pay</button>
+                {/* ── CARRY-FORWARD DUES ── */}
+                {!isEditing && hasPreviousPending && (
+                  <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="relative flex h-4 w-4 shrink-0"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500" /></span>
+                      <h4 className="text-rose-700 font-bold text-sm">Carry-Forward Dues — {pendingMonthsCount} Month{pendingMonthsCount > 1 ? "s" : ""} Unpaid</h4>
+                    </div>
+                    <div className="text-center mb-3">
+                      <p className="text-rose-400 text-xs uppercase tracking-wide">Total Arrears (Previous Months)</p>
+                      <p className="text-rose-600 text-3xl font-black">{fmt(arrearsTotal)}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      {pendingMonths.map((pm) => {
+                        const pmRemaining = pm.rentAmount - pm.paidAmount;
+                        return (
+                          <div key={pm.monthYear} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-rose-200">
+                            <div><span className="text-gray-700 text-xs font-medium">{fmtMonthYear(pm.dueDate)}</span>{pm.paidAmount > 0 && <span className="text-gray-400 text-[10px] ml-2">(paid {fmt(pm.paidAmount)})</span>}</div>
+                            <div className="flex items-center gap-2">
+                              {pill(pm.status)}<span className="text-rose-600 text-xs font-bold">{fmt(pmRemaining)}</span>
+                              <button onClick={() => onPayNow(tenant._id, payable, pm.monthYear)} className="text-[10px] px-2 py-0.5 rounded-md bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors">Pay</button>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
-                  <span className="text-amber-700 font-black text-xl">{tenant?.name?.[0]?.toUpperCase()}</span>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-gray-900 font-bold text-xl">{tenant?.name}</h3>
-                  <p className="text-gray-500 text-sm">{tenant?.email || "No email on record"}</p>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    <button onClick={() => window.open(`https://wa.me/91${phone}?text=${buildWAMessage(tenant, currentRecord, buildingDetails)}`, "_blank")} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 text-emerald-700 hover:text-white transition-colors">📱 WhatsApp</button>
-                    <a href={`tel:${tenant?.phone}`} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-600 border border-blue-200 text-blue-700 hover:text-white transition-colors">📞 Call</a>
-                    {(currentRecord?.status !== "Paid" || hasPreviousPending) && <EmailReminderButton tenantId={tenant?._id} tenantEmail={tenant?.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} />}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-gray-400 text-[10px] uppercase font-semibold mb-1">Grand Total Due</p>
-                  <p className="text-xl font-black text-gray-900">{fmt(totalAccumulatedDue)}</p>
-                </div>
-              </div>
-
-              {/* FATHER DETAILS RESTORED */}
-              {(tenant?.fatherName || tenant?.fatherPhone) && (
-                <div className="rounded-xl border border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50 p-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>👨‍👦</span> Father's Details</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {tenant?.fatherName && (
-                      <div className="bg-white rounded-lg p-3 border border-gray-200">
-                        <p className="text-gray-500 text-[10px] uppercase tracking-wide">Father's Name</p>
-                        <p className="text-gray-900 font-medium text-sm">{tenant.fatherName}</p>
-                      </div>
-                    )}
-                    {tenant?.fatherPhone && (
-                      <div className="bg-white rounded-lg p-3 border border-gray-200">
-                        <p className="text-gray-500 text-[10px] uppercase tracking-wide">Father's Phone</p>
-                        <p className="text-gray-900 font-medium text-sm">{tenant.fatherPhone}</p>
-                        <button onClick={() => window.location.href = `tel:${tenant.fatherPhone}`} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium">📞 Call Father</button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  ["Phone", tenant?.phone], ["Joining Date", fmtDate(tenant?.joiningDate)], ["Monthly Rent", fmt(tenant?.rentAmount)], ["Permanent Address", tenant?.permanentAddress],
-                  buildingDetails && ["Building", buildingDetails.buildingName], buildingDetails && ["Floor", `Floor ${buildingDetails.floorNumber}`], buildingDetails && ["Room", `Room ${buildingDetails.roomNumber}`]
-                ].filter(Boolean).map(([label, val]) => (
-                  <div key={label} className="rounded-xl bg-gray-50 border border-gray-200 p-3"><p className="text-gray-500 text-[11px] uppercase tracking-wide mb-0.5">{label}</p><p className="text-gray-900 text-sm font-medium">{val || "—"}</p></div>
-                ))}
-              </div>
-
-              {/* DOCUMENTS SECTION RESTORED */}
-              {(tenant?.documents?.aadharFront || tenant?.documents?.aadharBack || tenant?.documents?.passportPhoto) && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>📄</span> Documents</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {tenant?.documents?.aadharFront && (
-                      <div className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewDocument(tenant.documents.aadharFront)}>
-                        <div className="text-3xl mb-2">🪪</div>
-                        <p className="text-gray-700 font-medium text-sm">Aadhar Front</p>
-                        <p className="text-gray-400 text-xs mt-1">Click to view</p>
-                      </div>
-                    )}
-                    {tenant?.documents?.aadharBack && (
-                      <div className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewDocument(tenant.documents.aadharBack)}>
-                        <div className="text-3xl mb-2">🪪</div>
-                        <p className="text-gray-700 font-medium text-sm">Aadhar Back</p>
-                        <p className="text-gray-400 text-xs mt-1">Click to view</p>
-                      </div>
-                    )}
-                    {tenant?.documents?.passportPhoto && (
-                      <div className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewDocument(tenant.documents.passportPhoto)}>
-                        <div className="text-3xl mb-2">📸</div>
-                        <p className="text-gray-700 font-medium text-sm">Passport Photo</p>
-                        <p className="text-gray-400 text-xs mt-1">Click to view</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <div>
-                    <p className="text-gray-500 text-xs uppercase tracking-wide">Current Month</p>
-                    <p className="text-gray-900 font-bold text-lg">{currentRecord ? fmtMonthYear(currentRecord.dueDate) : "—"}</p>
-                    <p className="text-gray-500 text-xs">Due: {fmtDate(currentRecord?.dueDate)}</p>
-                  </div>
-                  {currentRecord?.status !== "Paid" && (
-                    <button onClick={() => onPayNow(tenant._id, payable, currentRecord?.monthYear)} className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm active:scale-95 transition-all">Pay Now</button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Rent</p><p className="text-gray-900 font-bold">{fmt(currentRecord?.rentAmount || tenant?.rentAmount)}</p></div>
-                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Paid</p><p className="text-emerald-600 font-bold">{fmt(currentRecord?.paidAmount || 0)}</p></div>
-                  <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Remaining</p><p className={`font-bold ${remaining > 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmt(remaining || 0)}</p></div>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-gray-500 text-xs uppercase tracking-wide mb-3">Full Payment History</p>
-                {history?.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">No history yet.</p> : (
-                  <div className="space-y-2">
-                    {history?.map((rec) => {
-                      const recRemaining = rec.rentAmount - rec.paidAmount;
-                      const isPending = rec.status !== "Paid";
-                      return (
-                        <div key={rec._id} className={`rounded-xl border px-4 py-3 flex items-center justify-between ${isPending ? "bg-rose-50 border-rose-200" : "bg-gray-50 border-gray-200"}`}>
-                          <div><p className="text-gray-900 text-sm font-semibold">{fmtMonthYear(rec.dueDate)}</p><p className="text-gray-500 text-xs">Due: {fmtDate(rec.dueDate)}</p></div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">{pill(rec.status)}<p className="text-gray-500 text-xs mt-1">{fmt(rec.paidAmount)} / {fmt(rec.rentAmount)}</p></div>
-                            {isPending && <button onClick={() => onPayNow(tenant._id, [{ monthYear: rec.monthYear, maxAmount: recRemaining, label: fmtMonthYear(rec.dueDate) }], rec.monthYear)} className="text-[10px] px-2 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors shrink-0">Pay {fmt(recRemaining)}</button>}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
-              </div>
 
-            </div>
-          )}
+                {/* ── TENANT HEADER (view mode) ── */}
+                {!isEditing && (
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
+                      <span className="text-amber-700 font-black text-lg sm:text-xl">{tenant?.name?.[0]?.toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-gray-900 font-bold text-lg sm:text-xl truncate">{tenant?.name}</h3>
+                      <p className="text-gray-500 text-sm truncate">{tenant?.email || "No email on record"}</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <button onClick={() => window.open(`https://wa.me/91${phone}?text=${buildWAMessage(tenant, currentRecord, buildingDetails)}`, "_blank")} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 text-emerald-700 hover:text-white transition-colors">📱 WhatsApp</button>
+                        <a href={`tel:${tenant?.phone}`} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-600 border border-blue-200 text-blue-700 hover:text-white transition-colors">📞 Call</a>
+                        {(currentRecord?.status !== "Paid" || hasPreviousPending) && <EmailReminderButton tenantId={tenant?._id} tenantEmail={tenant?.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} />}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 hidden sm:block">
+                      <p className="text-gray-400 text-[10px] uppercase font-semibold mb-1">Grand Total Due</p>
+                      <p className="text-xl font-black text-gray-900">{fmt(totalAccumulatedDue)}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── EDIT FORM ── */}
+                {isEditing && (
+                  <div className="space-y-4">
+                    {/* Basic Info */}
+                    <div>
+                      <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold mb-2">Basic Information</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-gray-500 text-[11px] uppercase tracking-wide">Full Name *</label>
+                          <input type="text" value={editForm.name} onChange={(e) => handleEditField("name", e.target.value)} className={inputClass} placeholder="Tenant name" />
+                        </div>
+                        <div>
+                          <label className="text-gray-500 text-[11px] uppercase tracking-wide">Phone *</label>
+                          <input type="tel" value={editForm.phone} onChange={(e) => handleEditField("phone", e.target.value)} className={inputClass} placeholder="Phone number" />
+                        </div>
+                        <div>
+                          <label className="text-gray-500 text-[11px] uppercase tracking-wide">Email</label>
+                          <input type="email" value={editForm.email} onChange={(e) => handleEditField("email", e.target.value)} className={inputClass} placeholder="Email address" />
+                        </div>
+                        <div>
+                          <label className="text-gray-500 text-[11px] uppercase tracking-wide">Monthly Rent (₹) *</label>
+                          <input type="number" value={editForm.rentAmount} onChange={(e) => handleEditField("rentAmount", e.target.value)} className={inputClass} placeholder="Rent amount" />
+                        </div>
+                        <div>
+                          <label className="text-gray-500 text-[11px] uppercase tracking-wide">Joining Date</label>
+                          <input type="date" value={editForm.joiningDate} onChange={(e) => handleEditField("joiningDate", e.target.value)} className={inputClass} />
+                        </div>
+                        <div>
+                          <label className="text-gray-500 text-[11px] uppercase tracking-wide">Permanent Address</label>
+                          <input type="text" value={editForm.permanentAddress} onChange={(e) => handleEditField("permanentAddress", e.target.value)} className={inputClass} placeholder="Permanent address" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Father Details */}
+                    <div>
+                      <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold mb-2">Father's Details</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-gray-500 text-[11px] uppercase tracking-wide">Father's Name</label>
+                          <input type="text" value={editForm.fatherName} onChange={(e) => handleEditField("fatherName", e.target.value)} className={inputClass} placeholder="Father's name" />
+                        </div>
+                        <div>
+                          <label className="text-gray-500 text-[11px] uppercase tracking-wide">Father's Phone</label>
+                          <input type="tel" value={editForm.fatherPhone} onChange={(e) => handleEditField("fatherPhone", e.target.value)} className={inputClass} placeholder="Father's phone" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Room / Bed Allocation */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Room Allocation</p>
+                        <button
+                          onClick={() => { setEditRoomMode((v) => !v); setNewAllocation(null); }}
+                          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${editRoomMode ? "bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200" : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"}`}
+                        >
+                          {editRoomMode ? "✕ Cancel Room Edit" : "🏠 Change Room"}
+                        </button>
+                      </div>
+
+                      {/* Current allocation display */}
+                      {!editRoomMode && (
+                        <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 grid grid-cols-3 gap-2 text-center">
+                          <div><p className="text-gray-400 text-[10px] uppercase">Building</p><p className="text-gray-800 text-sm font-semibold">{buildingDetails?.buildingName || "—"}</p></div>
+                          <div><p className="text-gray-400 text-[10px] uppercase">Floor</p><p className="text-gray-800 text-sm font-semibold">{buildingDetails?.floorNumber != null ? `Floor ${buildingDetails.floorNumber}` : "—"}</p></div>
+                          <div><p className="text-gray-400 text-[10px] uppercase">Room / Bed</p><p className="text-gray-800 text-sm font-semibold">{buildingDetails?.roomNumber ? `${buildingDetails.roomNumber} / Bed ${buildingDetails.bedNumber || "—"}` : "—"}</p></div>
+                        </div>
+                      )}
+
+                      {editRoomMode && (
+                        <>
+                          <RoomAllocator currentAlloc={buildingDetails} onSelect={setNewAllocation} />
+                          {newAllocation && (
+                            <div className="mt-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700 font-semibold">
+                              ✅ New bed selected: {newAllocation.allocationInfo.buildingName} · Floor {newAllocation.allocationInfo.floorNumber} · Room {newAllocation.allocationInfo.roomNumber} · Bed {newAllocation.allocationInfo.bedNumber}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Save error */}
+                    {saveError && (
+                      <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-600">{saveError}</div>
+                    )}
+
+                    {/* Save button */}
+                    <button
+                      onClick={handleSaveEdit}
+                      disabled={saving}
+                      className="w-full py-3 rounded-xl font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all text-sm"
+                    >
+                      {saving ? "Saving…" : "💾 Save Changes"}
+                    </button>
+                  </div>
+                )}
+
+                {/* ── VIEW MODE DETAILS ── */}
+                {!isEditing && (
+                  <>
+                    {/* Father Details */}
+                    {(tenant?.fatherName || tenant?.fatherPhone) && (
+                      <div className="rounded-xl border border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50 p-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>👨‍👦</span> Father's Details</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {tenant?.fatherName && (
+                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                              <p className="text-gray-500 text-[10px] uppercase tracking-wide">Father's Name</p>
+                              <p className="text-gray-900 font-medium text-sm">{tenant.fatherName}</p>
+                            </div>
+                          )}
+                          {tenant?.fatherPhone && (
+                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                              <p className="text-gray-500 text-[10px] uppercase tracking-wide">Father's Phone</p>
+                              <p className="text-gray-900 font-medium text-sm">{tenant.fatherPhone}</p>
+                              <button onClick={() => window.location.href = `tel:${tenant.fatherPhone}`} className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium">📞 Call Father</button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Info Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[
+                        ["Phone", tenant?.phone],
+                        ["Joining Date", fmtDate(tenant?.joiningDate)],
+                        ["Monthly Rent", fmt(tenant?.rentAmount)],
+                        ["Permanent Address", tenant?.permanentAddress],
+                        buildingDetails && ["Building", buildingDetails.buildingName],
+                        buildingDetails && ["Floor", `Floor ${buildingDetails.floorNumber}`],
+                        buildingDetails && ["Room", `Room ${buildingDetails.roomNumber}`],
+                        buildingDetails?.bedNumber && ["Bed", `Bed ${buildingDetails.bedNumber}`],
+                      ].filter(Boolean).map(([label, val]) => (
+                        <div key={label} className="rounded-xl bg-gray-50 border border-gray-200 p-3">
+                          <p className="text-gray-500 text-[11px] uppercase tracking-wide mb-0.5">{label}</p>
+                          <p className="text-gray-900 text-sm font-medium">{val || "—"}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Documents */}
+                    {(tenant?.documents?.aadharFront || tenant?.documents?.aadharBack || tenant?.documents?.passportPhoto) && (
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>📄</span> Documents</h4>
+                        <div className="grid grid-cols-3 gap-3">
+                          {tenant?.documents?.aadharFront && (
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewDocument(tenant.documents.aadharFront)}>
+                              <div className="text-2xl sm:text-3xl mb-2">🪪</div>
+                              <p className="text-gray-700 font-medium text-xs sm:text-sm">Aadhar Front</p>
+                              <p className="text-gray-400 text-[10px] mt-1">Click to view</p>
+                            </div>
+                          )}
+                          {tenant?.documents?.aadharBack && (
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewDocument(tenant.documents.aadharBack)}>
+                              <div className="text-2xl sm:text-3xl mb-2">🪪</div>
+                              <p className="text-gray-700 font-medium text-xs sm:text-sm">Aadhar Back</p>
+                              <p className="text-gray-400 text-[10px] mt-1">Click to view</p>
+                            </div>
+                          )}
+                          {tenant?.documents?.passportPhoto && (
+                            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewDocument(tenant.documents.passportPhoto)}>
+                              <div className="text-2xl sm:text-3xl mb-2">📸</div>
+                              <p className="text-gray-700 font-medium text-xs sm:text-sm">Passport Photo</p>
+                              <p className="text-gray-400 text-[10px] mt-1">Click to view</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Current Month Rent */}
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
+                      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                        <div>
+                          <p className="text-gray-500 text-xs uppercase tracking-wide">Current Month</p>
+                          <p className="text-gray-900 font-bold text-lg">{currentRecord ? fmtMonthYear(currentRecord.dueDate) : "—"}</p>
+                          <p className="text-gray-500 text-xs">Due: {fmtDate(currentRecord?.dueDate)}</p>
+                        </div>
+                        {currentRecord?.status !== "Paid" && (
+                          <button onClick={() => onPayNow(tenant._id, payable, currentRecord?.monthYear)} className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm active:scale-95 transition-all">Pay Now</button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Rent</p><p className="text-gray-900 font-bold text-sm">{fmt(currentRecord?.rentAmount || tenant?.rentAmount)}</p></div>
+                        <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Paid</p><p className="text-emerald-600 font-bold text-sm">{fmt(currentRecord?.paidAmount || 0)}</p></div>
+                        <div className="bg-white rounded-xl p-3 text-center border border-gray-200"><p className="text-gray-500 text-[11px]">Remaining</p><p className={`font-bold text-sm ${remaining > 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmt(remaining || 0)}</p></div>
+                      </div>
+                    </div>
+
+                    {/* Payment History */}
+                    <div>
+                      <p className="text-gray-500 text-xs uppercase tracking-wide mb-3">Full Payment History</p>
+                      {history?.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">No history yet.</p> : (
+                        <div className="space-y-2">
+                          {history?.map((rec) => {
+                            const recRemaining = rec.rentAmount - rec.paidAmount;
+                            const isPending = rec.status !== "Paid";
+                            return (
+                              <div key={rec._id} className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-2 ${isPending ? "bg-rose-50 border-rose-200" : "bg-gray-50 border-gray-200"}`}>
+                                <div className="min-w-0">
+                                  <p className="text-gray-900 text-sm font-semibold">{fmtMonthYear(rec.dueDate)}</p>
+                                  <p className="text-gray-500 text-xs">Due: {fmtDate(rec.dueDate)}</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <div className="text-right">{pill(rec.status)}<p className="text-gray-500 text-xs mt-1">{fmt(rec.paidAmount)} / {fmt(rec.rentAmount)}</p></div>
+                                  {isPending && <button onClick={() => onPayNow(tenant._id, [{ monthYear: rec.monthYear, maxAmount: recRemaining, label: fmtMonthYear(rec.dueDate) }], rec.monthYear)} className="text-[10px] px-2 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors shrink-0">Pay {fmt(recRemaining)}</button>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* Bottom padding for mobile */}
+                <div className="h-4" />
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Vacate confirmation modal */}
+      {showVacateConfirm && (
+        <VacateConfirmModal
+          tenantName={tenant?.name}
+          onConfirm={handleVacate}
+          onCancel={() => { setShowVacateConfirm(false); setVacateError(""); }}
+          loading={vacating}
+        />
+      )}
+      {vacateError && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[80] bg-rose-600 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-semibold">
+          ❌ {vacateError}
+        </div>
+      )}
+
       {viewingDoc && <DocumentViewer imageUrl={viewingDoc} onClose={() => setViewingDoc(null)} />}
     </>
   );
@@ -396,7 +786,7 @@ function PayModal({ tenantId, payableMonths, initialMonthYear, onClose, onSucces
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   };
 
-  if (!payableMonths || payableMonths.length === 0) return null; 
+  if (!payableMonths || payableMonths.length === 0) return null;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -442,9 +832,9 @@ export default function RentManagement() {
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedTenantId, setSelectedTenantId] = useState(null);
-  const [payModal, setPayModal] = useState(null); 
+  const [payModal, setPayModal] = useState(null);
   const [toast, setToast] = useState("");
-  const [paymentDone, setPaymentDone] = useState(0); 
+  const [paymentDone, setPaymentDone] = useState(0);
 
   const pollRef = useRef(null);
 
@@ -482,6 +872,13 @@ export default function RentManagement() {
 
   const onPayNow = (tenantId, payableMonths, initialMonthYear) => { setPayModal({ tenantId, payableMonths, initialMonthYear }); };
   const onPaySuccess = (data) => { setPayModal(null); setToast(data.message || "Payment recorded!"); setPaymentDone((n) => n + 1); if (hasSearched) handleSearch(); };
+
+  const handleTenantUpdated = () => {
+    setToast("Tenant updated successfully!");
+    setPaymentDone((n) => n + 1);
+    if (hasSearched) handleSearch();
+    loadDue();
+  };
 
   const summaryStats = {
     total: dueItems.length,
@@ -540,7 +937,15 @@ export default function RentManagement() {
         </section>
       </div>
 
-      {selectedTenantId && <TenantDetailModal tenantId={selectedTenantId} onClose={() => setSelectedTenantId(null)} onPayNow={onPayNow} onPaymentDone={paymentDone} />}
+      {selectedTenantId && (
+        <TenantDetailModal
+          tenantId={selectedTenantId}
+          onClose={() => setSelectedTenantId(null)}
+          onPayNow={onPayNow}
+          onPaymentDone={paymentDone}
+          onTenantUpdated={handleTenantUpdated}
+        />
+      )}
       {payModal && <PayModal tenantId={payModal.tenantId} payableMonths={payModal.payableMonths} initialMonthYear={payModal.initialMonthYear} onClose={() => setPayModal(null)} onSuccess={onPaySuccess} />}
       {toast && <Toast msg={toast} onDone={() => setToast("")} />}
     </div>

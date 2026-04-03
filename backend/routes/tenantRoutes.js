@@ -574,4 +574,65 @@ router.delete("/:id/vacate", auth, async (req, res) => {
   }
 });
 
+// REALLOCATE BED — free old bed, assign new bed
+router.put("/:id/reallocate", auth, async (req, res) => {
+  try {
+    const { buildingId, floorId, roomId, bedId, allocationInfo } = req.body;
+    if (!buildingId || !floorId || !roomId || !bedId) {
+      return res.status(400).json({ message: "buildingId, floorId, roomId, bedId are required." });
+    }
+
+    const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!tenant) return res.status(404).json({ message: "Tenant not found." });
+
+    // 1. Free previous bed
+    if (tenant.buildingId && tenant.floorId && tenant.roomId && tenant.bedId) {
+      const oldBuilding = await Building.findById(tenant.buildingId);
+      if (oldBuilding) {
+        const oldFloor = oldBuilding.floors.id(tenant.floorId);
+        const oldRoom  = oldFloor?.rooms.id(tenant.roomId);
+        const oldBed   = oldRoom?.beds.id(tenant.bedId);
+        if (oldBed) {
+          oldBed.status   = "Available";
+          oldBed.tenantId = null;
+          await oldBuilding.save();
+        }
+      }
+    }
+
+    // 2. Occupy new bed
+    const newBuilding = await Building.findOne({ _id: buildingId, owner: req.user.id });
+    if (!newBuilding) return res.status(404).json({ message: "New building not found." });
+    const newFloor = newBuilding.floors.id(floorId);
+    if (!newFloor) return res.status(404).json({ message: "New floor not found." });
+    const newRoom = newFloor.rooms.id(roomId);
+    if (!newRoom) return res.status(404).json({ message: "New room not found." });
+    const newBed = newRoom.beds.id(bedId);
+    if (!newBed) return res.status(404).json({ message: "New bed not found." });
+    if (newBed.status === "Occupied") return res.status(400).json({ message: "Selected bed is already occupied." });
+
+    newBed.status   = "Occupied";
+    newBed.tenantId = tenant._id;
+    await newBuilding.save();
+
+    // 3. Update tenant allocation
+    tenant.buildingId    = buildingId;
+    tenant.floorId       = floorId;
+    tenant.roomId        = roomId;
+    tenant.bedId         = bedId;
+    tenant.allocationInfo = allocationInfo || {
+      buildingName: newBuilding.buildingName,
+      floorNumber:  newFloor.floorNumber,
+      roomNumber:   newRoom.roomNumber,
+      bedNumber:    newBed.bedNumber,
+    };
+    await tenant.save();
+
+    res.json({ message: "Tenant reallocated successfully.", tenant });
+  } catch (err) {
+    console.error("Error reallocating tenant:", err);
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
 export default router;
