@@ -1,7 +1,7 @@
+import "dotenv/config"; // <-- FIX: This MUST be the very first line to load .env before other imports
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
-import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
@@ -13,8 +13,6 @@ import rentRoutes from "./routes/Rentroutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
-dotenv.config();
-
 // Define __filename and __dirname for ES modules BEFORE using them
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -22,7 +20,7 @@ const __dirname  = path.dirname(__filename);
 const app = express();
 app.use(express.json());
 
-// Serve uploaded tenant documents (Now correctly placed after app initialization)
+// Serve uploaded tenant documents
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
@@ -36,16 +34,13 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      // ✅ Allow requests with no origin (Postman, mobile apps)
       if (!origin) return callback(null, true);
-
-      // ✅ Normalize origin (remove trailing slash)
       const cleanOrigin = origin.replace(/\/$/, "");
 
       if (allowedOrigins.includes(cleanOrigin)) {
         callback(null, true);
       } else {
-        console.log("❌ Blocked by CORS:", origin); // DEBUG
+        console.log("❌ Blocked by CORS:", origin);
         callback(new Error("Not allowed by CORS"));
       }
     },
@@ -136,13 +131,10 @@ app.post("/api/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials." });
     }
 
-    // ── NEW: Block check — only applies to non-master users ──────────────────
-    // Master accounts can never be blocked.
     if (user.role !== "master" && user.loginStatus === "blocked") {
       return res.status(403).json({
-        message:
-          "Your login has been stopped by the website owner. Please contact support.",
-        blocked: true,   // flag so the frontend can show a special UI
+        message: "Your login has been stopped by the website owner. Please contact support.",
+        blocked: true,
       });
     }
 

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
@@ -24,32 +25,26 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
-// ── Cloudinary (optional) ─────────────────────────────────────────────────────
-const CLOUDINARY_READY = !!(
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET
-);
+// ── Cloudinary setup ──────────────────────────────────────────────────────────
+// Trim whitespace from env vars to avoid invisible-character issues
+const CLD_CLOUD = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
+const CLD_KEY   = (process.env.CLOUDINARY_API_KEY    || "").trim();
+const CLD_SEC   = (process.env.CLOUDINARY_API_SECRET || "").trim();
+
+const CLOUDINARY_READY = !!(CLD_CLOUD && CLD_KEY && CLD_SEC);
 
 if (CLOUDINARY_READY) {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME.trim(),
-    api_key:    process.env.CLOUDINARY_API_KEY.trim(),
-    api_secret: process.env.CLOUDINARY_API_SECRET.trim(),
-  });
-  console.log("✅ Cloudinary configured — files will be uploaded to Cloudinary");
+  cloudinary.config({ cloud_name: CLD_CLOUD, api_key: CLD_KEY, api_secret: CLD_SEC });
+  console.log("✅ Cloudinary configured — documents will be uploaded to Cloudinary");
 } else {
-  console.log("📁 Cloudinary not configured — files will be saved to local disk (uploads/tenant-docs/)");
+  console.warn("⚠️  Cloudinary env vars missing/empty.");
+  console.warn("    CLOUDINARY_CLOUD_NAME:", CLD_CLOUD ? "✅ set" : "❌ missing");
+  console.warn("    CLOUDINARY_API_KEY   :", CLD_KEY   ? "✅ set" : "❌ missing");
+  console.warn("    CLOUDINARY_API_SECRET:", CLD_SEC   ? "✅ set" : "❌ missing");
+  console.warn("    → Falling back to local disk storage. Documents will be served from /uploads/.");
 }
 
 // ── Local disk storage ────────────────────────────────────────────────────────
-// Files saved to:  <project-root>/uploads/tenant-docs/<filename>
-// Served at:       http://localhost:5000/uploads/tenant-docs/<filename>
-//
-// ⚠️  Add this ONE line to your server.js  (after app is created):
-//     import path from "path";
-//     app.use("/uploads", express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), "uploads")));
-//
 const UPLOAD_DIR = path.join(__dirname, "..", "uploads", "tenant-docs");
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -65,12 +60,12 @@ const diskStorage = multer.diskStorage({
   },
 });
 
-// ── Single multer instance ────────────────────────────────────────────────────
-// memoryStorage when Cloudinary is ready (upload_stream needs a buffer)
-// diskStorage when Cloudinary is NOT configured (write straight to disk)
+// ── Multer instance ───────────────────────────────────────────────────────────
+// When Cloudinary is ready  → memoryStorage (upload_stream needs a Buffer)
+// When Cloudinary is absent → diskStorage  (write directly to disk)
 const upload = multer({
   storage: CLOUDINARY_READY ? multer.memoryStorage() : diskStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const ok = /^image\/(jpeg|jpg|png|webp)|application\/pdf$/.test(file.mimetype);
     ok ? cb(null, true) : cb(new Error("Only JPG, PNG, WEBP or PDF files are allowed"));
@@ -87,45 +82,55 @@ const uploadToCloudinary = (buffer, folder) =>
       .end(buffer);
   });
 
-// ── Shared document resolver ──────────────────────────────────────────────────
-// Returns { aadharFront, aadharBack, passportPhoto } — each a URL string or null.
-// Cloudinary path  → full https:// URL stored in DB
-// Disk path        → relative "/uploads/tenant-docs/<file>" stored in DB
-//                    Frontend prepends the backend base URL to display the image
+// ── Document URL resolver ─────────────────────────────────────────────────────
+// Returns { aadharFront, aadharBack, passportPhoto }
+//   Cloudinary → stores full https://res.cloudinary.com/... URL  ✅
+//   Disk       → stores full https://<BACKEND_URL>/uploads/...   ✅
+//                (BACKEND_URL from env, e.g. https://your-api.onrender.com)
+//
+// THIS IS THE KEY FIX:
+//   Previously the disk path was stored as a bare relative path like
+//   "/uploads/tenant-docs/file.jpg" which looks like a local filesystem path
+//   in the DB.  Now we always store an absolute URL — either a Cloudinary
+//   https:// URL or a full backend https:// URL — so the DB always has a
+//   real, clickable link regardless of which storage backend is used.
 const resolveDocUrls = async (files) => {
   const docs = { aadharFront: null, aadharBack: null, passportPhoto: null };
   if (!files) return docs;
 
-  const resolve = async (fileArr, folder) => {
+  const resolveOne = async (fileArr, folder) => {
     if (!fileArr || !fileArr[0]) return null;
     const f = fileArr[0];
 
+    // ── Cloudinary path ──────────────────────────────────────────────────────
     if (CLOUDINARY_READY) {
       try {
         const url = await uploadToCloudinary(f.buffer, folder);
-        console.log(`  ✅ Cloudinary → ${url}`);
-        return url;
+        // console.log(`  ✅ Cloudinary upload OK → ${url}`);
+        return url;                // e.g. https://res.cloudinary.com/demo/image/upload/...
       } catch (err) {
-        console.error(`  ❌ Cloudinary failed for ${folder}:`, err.message);
-        return null;
+        console.error(`  ❌ Cloudinary upload FAILED for "${folder}":`, err.message);
+        // Do NOT silently return null — surface the error so the caller knows
+        throw new Error(`Cloudinary upload failed: ${err.message}`);
       }
     }
 
-    // diskStorage — f.filename is set by multer
-    const relUrl = `/uploads/tenant-docs/${f.filename}`;
-    console.log(`  💾 Disk → ${relUrl}`);
-    return relUrl;
+    // ── Disk fallback path ───────────────────────────────────────────────────
+    // f.filename is set by multer diskStorage
+    // Store a FULL URL (not a bare relative path) so the DB holds a real link.
+    const backendBase = (process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, "");
+    const fullUrl = `${backendBase}/uploads/tenant-docs/${f.filename}`;
+    console.log(`  💾 Disk upload OK → ${fullUrl}`);
+    return fullUrl;
   };
 
-  console.log("📎 Processing uploads:", Object.keys(files));
-  docs.aadharFront   = await resolve(files.aadharFront,   "tenant_documents/aadhar");
-  docs.aadharBack    = await resolve(files.aadharBack,    "tenant_documents/aadhar");
-  docs.passportPhoto = await resolve(files.passportPhoto, "tenant_documents/passport");
+  // console.log("📎 Processing document uploads:", Object.keys(files));
+  docs.aadharFront   = await resolveOne(files.aadharFront,   "tenant_documents/aadhar");
+  docs.aadharBack    = await resolveOne(files.aadharBack,    "tenant_documents/aadhar");
+  docs.passportPhoto = await resolveOne(files.passportPhoto, "tenant_documents/passport");
 
-  const saved   = Object.values(docs).filter(Boolean).length;
-  const missing = 3 - saved;
-  console.log(`📄 Documents: ${saved}/3 stored${missing ? ` — ${missing} missing` : " ✅"}`);
-
+  const saved = Object.values(docs).filter(Boolean).length;
+  console.log(`📄 Documents resolved: ${saved}/3${saved < 3 ? " (some missing — not uploaded by client)" : " ✅"}`);
   return docs;
 };
 
@@ -145,7 +150,7 @@ const auth = (req, res, next) => {
 // PUBLIC ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Generate a SHORT onboarding link
+// Generate a SHORT onboarding link (8-char code instead of full JWT in URL)
 router.get("/generate-link", auth, (req, res) => {
   const jwtToken = jwt.sign(
     { id: req.user.id, purpose: "tenant-registration" },
@@ -155,12 +160,12 @@ router.get("/generate-link", auth, (req, res) => {
   const shortCode = crypto.randomBytes(5).toString("base64url").slice(0, 8);
   const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
   shortTokenStore.set(shortCode, { jwtToken, expiresAt });
-
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  res.json({ link: `${frontendUrl}/tenant-register/${shortCode}`, expiresIn: "7 days" });
+  const link = `${frontendUrl}/tenant-register/${shortCode}`;
+  res.json({ link, expiresIn: "7 days" });
 });
 
-// Validate short code / legacy JWT
+// Validate a short code (or legacy full JWT — backwards compatible)
 router.get("/validate-link/:token", async (req, res) => {
   try {
     let decoded;
@@ -168,17 +173,20 @@ router.get("/validate-link/:token", async (req, res) => {
 
     if (raw.length <= 12) {
       const entry = shortTokenStore.get(raw);
-      if (!entry || entry.expiresAt < Date.now())
+      if (!entry || entry.expiresAt < Date.now()) {
         return res.status(401).json({ message: "Link is invalid or has expired." });
+      }
       decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
     } else {
       decoded = jwt.verify(raw, process.env.JWT_SECRET);
     }
 
-    if (decoded.purpose && decoded.purpose !== "tenant-registration")
+    if (decoded.purpose && decoded.purpose !== "tenant-registration") {
       return res.status(403).json({ message: "Invalid link purpose." });
+    }
 
-    const buildings = await Building.find({ owner: decoded.id })
+    const ownerId  = decoded.id;
+    const buildings = await Building.find({ owner: ownerId })
       .select("buildingName address floors")
       .lean();
 
@@ -194,12 +202,12 @@ router.get("/validate-link/:token", async (req, res) => {
     }));
 
     res.json({ valid: true, buildings: sanitised });
-  } catch {
+  } catch (err) {
     res.status(401).json({ message: "Link is invalid or has expired." });
   }
 });
 
-// ── Self-registration via onboarding link  (PUBLIC — no auth middleware) ──────
+// Self-registration via onboarding link
 router.post(
   "/register-via-link",
   upload.fields([
@@ -216,13 +224,14 @@ router.post(
         buildingId, floorId, roomId, bedId,
       } = req.body;
 
-      // ── Resolve linkToken → ownerId ──────────────────────────────────────
+      // Resolve short code or legacy full JWT
       let decoded;
       try {
         if (linkToken && linkToken.length <= 12) {
           const entry = shortTokenStore.get(linkToken);
-          if (!entry || entry.expiresAt < Date.now())
+          if (!entry || entry.expiresAt < Date.now()) {
             return res.status(401).json({ message: "Registration link is invalid or expired." });
+          }
           decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
         } else {
           decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
@@ -231,17 +240,21 @@ router.post(
         return res.status(401).json({ message: "Registration link is invalid or expired." });
       }
 
-      // !! Never use req.user.id here — this is a PUBLIC route, req.user is undefined !!
       const ownerId = decoded.id;
 
-      if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount)
-        return res.status(400).json({ message: "name, phone, permanentAddress, joiningDate, rentAmount are required." });
+      if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount) {
+        return res.status(400).json({
+          message: "name, phone, permanentAddress, joiningDate, rentAmount are required.",
+        });
+      }
 
       const documents = await resolveDocUrls(req.files);
       const advance   = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
 
-      // ── With room allocation ─────────────────────────────────────────────
-      if (buildingId && floorId && roomId && bedId) {
+      // ── With room allocation ───────────────────────────────────────────────
+      if (buildingId && floorId && roomId && bedId &&
+          buildingId !== "" && floorId !== "" && roomId !== "" && bedId !== "") {
+
         const building = await Building.findOne({ _id: buildingId, owner: ownerId });
         if (!building) return res.status(404).json({ message: "Building not found." });
 
@@ -254,8 +267,9 @@ router.post(
         const bed = room.beds.id(bedId);
         if (!bed) return res.status(404).json({ message: "Bed not found." });
 
-        if (bed.status === "Occupied")
-          return res.status(400).json({ message: "That bed was just taken. Please choose another." });
+        if (bed.status === "Occupied") {
+          return res.status(400).json({ message: "Bed is already occupied." });
+        }
 
         const allocationInfo = {
           buildingName: building.buildingName,
@@ -472,13 +486,13 @@ router.put(
       if (!tenant) return res.status(404).json({ message: "Tenant not found." });
       res.json({ message: "Tenant updated.", tenant });
     } catch (err) {
-      console.error("Error updating tenant:", err);
+      console.error("❌ PUT /tenants/:id error:", err.message);
       res.status(500).json({ message: "Server error.", error: err.message });
     }
   }
 );
 
-// Vacate tenant
+// Vacate tenant — free the bed and mark tenant Inactive
 router.delete("/:id/vacate", auth, async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
@@ -490,15 +504,19 @@ router.delete("/:id/vacate", auth, async (req, res) => {
         const floor = building.floors.id(tenant.floorId);
         const room  = floor?.rooms.id(tenant.roomId);
         const bed   = room?.beds.id(tenant.bedId);
-        if (bed) { bed.status = "Available"; bed.tenantId = null; await building.save(); }
+        if (bed) {
+          bed.status   = "Available";
+          bed.tenantId = null;
+          await building.save();
+        }
       }
     }
 
-    tenant.status         = "Inactive";
-    tenant.buildingId     = null;
-    tenant.floorId        = null;
-    tenant.roomId         = null;
-    tenant.bedId          = null;
+    tenant.status      = "Inactive";
+    tenant.buildingId  = null;
+    tenant.floorId     = null;
+    tenant.roomId      = null;
+    tenant.bedId       = null;
     tenant.allocationInfo = {};
     await tenant.save();
 
@@ -509,7 +527,7 @@ router.delete("/:id/vacate", auth, async (req, res) => {
   }
 });
 
-// REALLOCATE BED — free old bed, assign new bed
+// Reallocate bed — free old bed, assign new bed
 router.put("/:id/reallocate", auth, async (req, res) => {
   try {
     const { buildingId, floorId, roomId, bedId, allocationInfo } = req.body;
@@ -551,10 +569,10 @@ router.put("/:id/reallocate", auth, async (req, res) => {
     await newBuilding.save();
 
     // 3. Update tenant allocation
-    tenant.buildingId    = buildingId;
-    tenant.floorId       = floorId;
-    tenant.roomId        = roomId;
-    tenant.bedId         = bedId;
+    tenant.buildingId     = buildingId;
+    tenant.floorId        = floorId;
+    tenant.roomId         = roomId;
+    tenant.bedId          = bedId;
     tenant.allocationInfo = allocationInfo || {
       buildingName: newBuilding.buildingName,
       floorNumber:  newFloor.floorNumber,

@@ -45,6 +45,84 @@ function buildWAMessage(tenant, record, buildingDetails) {
   return encodeURIComponent(`Hello ${tenant.name},\n\nThis is a gentle reminder that your rent of ${fmt(remaining)} for ${month} (${room}) is due.\nPlease pay at the earliest.\n\nThank you!`);
 }
 
+// ─── Profile Image Popup ──────────────────────────────────────────────────────
+function ProfileImagePopup({ imageUrl, name, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col items-center gap-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/40 text-white text-lg font-bold transition-colors z-10 border border-white/30"
+        >
+          ✕
+        </button>
+
+        {/* Profile image */}
+        <div className="w-64 h-64 sm:w-80 sm:h-80 rounded-full overflow-hidden border-4 border-white/30 shadow-2xl">
+          <img
+            src={imageUrl}
+            alt={name}
+            className="w-full h-full object-cover"
+          />
+        </div>
+
+        {/* Name label */}
+        {name && (
+          <p className="text-white font-bold text-lg tracking-wide drop-shadow-lg">{name}</p>
+        )}
+
+        {/* Open in new tab */}
+        <button
+          onClick={() => window.open(imageUrl, "_blank")}
+          className="text-white/70 hover:text-white text-xs font-semibold underline underline-offset-2 transition-colors"
+        >
+          🔗 Open full size
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Profile Avatar ───────────────────────────────────────────────────────────
+function ProfileAvatar({ name, photoUrl, size = "md", hasPreviousPending = false, onClick }) {
+  const sizes = {
+    sm: "w-10 h-10 text-sm",
+    md: "w-12 h-12 text-base",
+    lg: "w-14 h-14 text-xl",
+  };
+
+  const ringColor = hasPreviousPending
+    ? "border-rose-400"
+    : "border-amber-300";
+
+  return (
+    <div
+      onClick={onClick}
+      title={photoUrl ? "Click to view profile photo" : undefined}
+      className={`
+        ${sizes[size]} rounded-full flex items-center justify-center shrink-0 overflow-hidden
+        border-2 ${ringColor}
+        ${photoUrl ? "cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-150 shadow-md" : hasPreviousPending ? "bg-rose-100" : "bg-amber-100"}
+      `}
+    >
+      {photoUrl ? (
+        <img src={photoUrl} alt={name} className="w-full h-full object-cover" />
+      ) : (
+        <span className={`font-black ${hasPreviousPending ? "text-rose-700" : "text-amber-700"}`}>
+          {name?.[0]?.toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function EmailReminderButton({ tenantId, tenantEmail, hasPreviousPending = false, pendingMonthsCount = 0, className = "" }) {
   const [state, setState] = useState("idle");
   const [errMsg, setErrMsg] = useState("");
@@ -91,62 +169,95 @@ function DueCard({ item, onSelect, onPayNow }) {
   const alloc = tenant.allocationInfo || {};
   const phone = tenant.phone?.replace(/\D/g, "");
   const payable = buildPayable(pendingMonths, record, remaining);
+  const passportPhoto = tenant.documents?.passportPhoto;
+
+  // Local state for profile photo popup
+  const [showProfilePopup, setShowProfilePopup] = useState(false);
 
   const handleWA = (e) => { e.stopPropagation(); window.open(`https://wa.me/91${phone}?text=${buildWAMessage(tenant, record, alloc)}`, "_blank"); };
   const handleCall = (e) => { e.stopPropagation(); window.location.href = `tel:${tenant.phone}`; };
 
+  const handleAvatarClick = (e) => {
+    e.stopPropagation();
+    if (passportPhoto) setShowProfilePopup(true);
+  };
+
   return (
-    <div onClick={() => onSelect(tenant._id)} className="relative group cursor-pointer rounded-2xl border border-gray-200 bg-white hover:border-amber-400 hover:shadow-md transition-all duration-200 overflow-hidden">
-      {hasPreviousPending ? <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-600 via-rose-400 to-rose-600 animate-pulse" /> : isOverdue ? <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500" /> : <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500" />}
-      
-      {hasPreviousPending && (
-        <div className="absolute -top-2 -right-2 z-10">
-          <span className="relative flex h-6 w-6">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-6 w-6 bg-rose-600 items-center justify-center shadow-lg"><span className="text-white text-[10px] font-black leading-none">{pendingMonthsCount}</span></span>
-          </span>
-        </div>
-      )}
+    <>
+      <div onClick={() => onSelect(tenant._id)} className="relative group cursor-pointer rounded-2xl border border-gray-200 bg-white hover:border-amber-400 hover:shadow-md transition-all duration-200 overflow-hidden">
+        {hasPreviousPending ? <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-600 via-rose-400 to-rose-600 animate-pulse" /> : isOverdue ? <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500" /> : <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500" />}
 
-      <div className="p-4 pt-5">
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div><p className="font-bold text-gray-900 text-base leading-tight">{tenant.name}</p><p className="text-gray-500 text-xs mt-0.5">{tenant.phone}</p></div>
-          <div className="flex gap-1.5 shrink-0">
-            <button onClick={handleWA} className="w-8 h-8 flex items-center justify-center rounded-full bg-emerald-50 hover:bg-emerald-500 border border-emerald-200 transition-colors group">📱</button>
-            <button onClick={handleCall} className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-50 hover:bg-blue-500 border border-blue-200 transition-colors group">📞</button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {alloc.buildingName && <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">🏢 {alloc.buildingName}</span>}
-          {alloc.roomNumber && <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">🚪 Room {alloc.roomNumber}</span>}
-        </div>
-
-        <div className="flex items-end justify-between">
-          <div>
-            <p className="text-gray-400 text-[11px] uppercase tracking-wide">Total Accumulated Due</p>
-            <p className={`text-2xl font-black ${hasPreviousPending ? "text-rose-600" : "text-gray-900"}`}>{fmt(totalAccumulatedDue)}</p>
-          </div>
-          <div className="text-right">
-            {isOverdue ? <span className="text-rose-600 text-xs font-semibold bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">⚠️ {daysOverdue}d overdue</span> : daysUntilDue !== null ? <span className="text-amber-600 text-xs font-semibold bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">🕐 Due in {daysUntilDue === 0 ? "today" : `${daysUntilDue}d`}</span> : null}
-          </div>
-        </div>
-
-        {hasPreviousPending && pendingMonths.length > 0 && (
-          <div className="mt-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 space-y-1">
-            <p className="text-rose-600 text-[10px] uppercase tracking-wide font-semibold mb-1">Pending Months</p>
-            {pendingMonths.slice(0, 3).map((pm) => <div key={pm.monthYear} className="flex justify-between text-[11px]"><span className="text-rose-700">{fmtMonthYear(pm.dueDate)}</span><span className="text-rose-700 font-bold">{fmt(pm.rentAmount - pm.paidAmount)}</span></div>)}
+        {hasPreviousPending && (
+          <div className="absolute -top-2 -right-2 z-10">
+            <span className="relative flex h-6 w-6">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-6 w-6 bg-rose-600 items-center justify-center shadow-lg"><span className="text-white text-[10px] font-black leading-none">{pendingMonthsCount}</span></span>
+            </span>
           </div>
         )}
 
-        <div className="mt-3 flex gap-2">
-          <button onClick={(e) => { e.stopPropagation(); onPayNow(tenant._id, payable, payable[0]?.monthYear); }} disabled={payable.length === 0} className={`flex-1 py-2 rounded-xl font-bold text-sm text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${hasPreviousPending ? "bg-rose-500 hover:bg-rose-600 active:scale-95" : "bg-amber-500 hover:bg-amber-600 active:scale-95"}`}>
-            {hasPreviousPending ? "Pay Dues" : "Pay Now"}
-          </button>
-          <EmailReminderButton tenantId={tenant._id} tenantEmail={tenant.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} className="shrink-0 px-3" />
+        <div className="p-4 pt-5">
+          <div className="flex items-start justify-between gap-2 mb-3">
+            {/* Profile avatar + name/phone */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <ProfileAvatar
+                name={tenant.name}
+                photoUrl={passportPhoto}
+                size="md"
+                hasPreviousPending={hasPreviousPending}
+                onClick={handleAvatarClick}
+              />
+              <div className="min-w-0">
+                <p className="font-bold text-gray-900 text-base leading-tight truncate">{tenant.name}</p>
+                <p className="text-gray-500 text-xs mt-0.5">{tenant.phone}</p>
+              </div>
+            </div>
+            <div className="flex gap-1.5 shrink-0">
+              <button onClick={handleWA} className="w-8 h-8 flex items-center justify-center rounded-full bg-emerald-50 hover:bg-emerald-500 border border-emerald-200 transition-colors group">📱</button>
+              <button onClick={handleCall} className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-50 hover:bg-blue-500 border border-blue-200 transition-colors group">📞</button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {alloc.buildingName && <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">🏢 {alloc.buildingName}</span>}
+            {alloc.roomNumber && <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">🚪 Room {alloc.roomNumber}</span>}
+          </div>
+
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-gray-400 text-[11px] uppercase tracking-wide">Total Accumulated Due</p>
+              <p className={`text-2xl font-black ${hasPreviousPending ? "text-rose-600" : "text-gray-900"}`}>{fmt(totalAccumulatedDue)}</p>
+            </div>
+            <div className="text-right">
+              {isOverdue ? <span className="text-rose-600 text-xs font-semibold bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">⚠️ {daysOverdue}d overdue</span> : daysUntilDue !== null ? <span className="text-amber-600 text-xs font-semibold bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">🕐 Due in {daysUntilDue === 0 ? "today" : `${daysUntilDue}d`}</span> : null}
+            </div>
+          </div>
+
+          {hasPreviousPending && pendingMonths.length > 0 && (
+            <div className="mt-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 space-y-1">
+              <p className="text-rose-600 text-[10px] uppercase tracking-wide font-semibold mb-1">Pending Months</p>
+              {pendingMonths.slice(0, 3).map((pm) => <div key={pm.monthYear} className="flex justify-between text-[11px]"><span className="text-rose-700">{fmtMonthYear(pm.dueDate)}</span><span className="text-rose-700 font-bold">{fmt(pm.rentAmount - pm.paidAmount)}</span></div>)}
+            </div>
+          )}
+
+          <div className="mt-3 flex gap-2">
+            <button onClick={(e) => { e.stopPropagation(); onPayNow(tenant._id, payable, payable[0]?.monthYear); }} disabled={payable.length === 0} className={`flex-1 py-2 rounded-xl font-bold text-sm text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${hasPreviousPending ? "bg-rose-500 hover:bg-rose-600 active:scale-95" : "bg-amber-500 hover:bg-amber-600 active:scale-95"}`}>
+              {hasPreviousPending ? "Pay Dues" : "Pay Now"}
+            </button>
+            <EmailReminderButton tenantId={tenant._id} tenantEmail={tenant.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} className="shrink-0 px-3" />
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Profile photo popup */}
+      {showProfilePopup && passportPhoto && (
+        <ProfileImagePopup
+          imageUrl={passportPhoto}
+          name={tenant.name}
+          onClose={() => setShowProfilePopup(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -155,25 +266,52 @@ function TenantRow({ item, onSelect, onPayNow }) {
   const alloc = tenant.allocationInfo || {};
   const payable = buildPayable(pendingMonths, record, remaining);
   const isFullyPaid = payable.length === 0;
+  const passportPhoto = tenant.documents?.passportPhoto;
+
+  // Local state for profile photo popup
+  const [showProfilePopup, setShowProfilePopup] = useState(false);
+
+  const handleAvatarClick = (e) => {
+    e.stopPropagation();
+    if (passportPhoto) setShowProfilePopup(true);
+  };
 
   return (
-    <div onClick={() => onSelect(tenant._id)} className={`relative flex items-center gap-4 px-5 py-3.5 rounded-xl border bg-white hover:shadow-sm cursor-pointer transition-all duration-150 group ${hasPreviousPending ? "border-rose-300 hover:border-rose-400 bg-rose-50/30" : "border-gray-200 hover:border-amber-300"}`}>
-      {hasPreviousPending && (
-        <div className="absolute -top-2 -left-2 z-10"><span className="relative flex h-5 w-5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-5 w-5 bg-rose-600 items-center justify-center shadow"><span className="text-white text-[9px] font-black leading-none">{pendingMonthsCount}</span></span></span></div>
+    <>
+      <div onClick={() => onSelect(tenant._id)} className={`relative flex items-center gap-4 px-5 py-3.5 rounded-xl border bg-white hover:shadow-sm cursor-pointer transition-all duration-150 group ${hasPreviousPending ? "border-rose-300 hover:border-rose-400 bg-rose-50/30" : "border-gray-200 hover:border-amber-300"}`}>
+        {hasPreviousPending && (
+          <div className="absolute -top-2 -left-2 z-10"><span className="relative flex h-5 w-5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-5 w-5 bg-rose-600 items-center justify-center shadow"><span className="text-white text-[9px] font-black leading-none">{pendingMonthsCount}</span></span></span></div>
+        )}
+
+        {/* Avatar — now uses ProfileAvatar with passport photo */}
+        <ProfileAvatar
+          name={tenant.name}
+          photoUrl={passportPhoto}
+          size="sm"
+          hasPreviousPending={hasPreviousPending}
+          onClick={handleAvatarClick}
+        />
+
+        <div className="flex-1 min-w-0">
+          <p className="text-gray-900 font-semibold text-sm truncate">{tenant.name}</p>
+          <p className="text-gray-500 text-xs truncate">{tenant.phone} {alloc.roomNumber ? ` · Room ${alloc.roomNumber}` : ""}</p>
+          {hasPreviousPending && <p className="text-rose-600 text-[10px] font-semibold mt-0.5">{pendingMonthsCount} month arrears — {fmt(totalAccumulatedDue)} total</p>}
+        </div>
+        <div className="text-right shrink-0">
+          {hasPreviousPending ? <><span className="px-2 py-0.5 rounded-full text-xs font-semibold border bg-rose-100 text-rose-800 border-rose-200">Arrears</span><p className="text-rose-600 font-black text-sm mt-1">{fmt(totalAccumulatedDue)}</p></> : <>{pill(record?.status || "Due")}<p className="text-gray-900 font-bold text-sm mt-1">{fmt(totalAccumulatedDue)}</p></>}
+        </div>
+        <button onClick={(e) => { e.stopPropagation(); if (!isFullyPaid) onPayNow(tenant._id, payable, payable[0]?.monthYear); }} disabled={isFullyPaid} className={`ml-2 px-3 py-1.5 text-xs rounded-lg font-semibold disabled:opacity-30 disabled:cursor-not-allowed text-white transition-all active:scale-95 shrink-0 ${hasPreviousPending ? "bg-rose-500 hover:bg-rose-600" : "bg-amber-500 hover:bg-amber-600"}`}>Pay</button>
+      </div>
+
+      {/* Profile photo popup */}
+      {showProfilePopup && passportPhoto && (
+        <ProfileImagePopup
+          imageUrl={passportPhoto}
+          name={tenant.name}
+          onClose={() => setShowProfilePopup(false)}
+        />
       )}
-      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${hasPreviousPending ? "bg-rose-100 border border-rose-300" : "bg-amber-100 border border-amber-200"}`}>
-        <span className={`font-bold text-sm ${hasPreviousPending ? "text-rose-700" : "text-amber-700"}`}>{tenant.name?.[0]?.toUpperCase()}</span>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-gray-900 font-semibold text-sm truncate">{tenant.name}</p>
-        <p className="text-gray-500 text-xs truncate">{tenant.phone} {alloc.roomNumber ? ` · Room ${alloc.roomNumber}` : ""}</p>
-        {hasPreviousPending && <p className="text-rose-600 text-[10px] font-semibold mt-0.5">{pendingMonthsCount} month arrears — {fmt(totalAccumulatedDue)} total</p>}
-      </div>
-      <div className="text-right shrink-0">
-        {hasPreviousPending ? <><span className="px-2 py-0.5 rounded-full text-xs font-semibold border bg-rose-100 text-rose-800 border-rose-200">Arrears</span><p className="text-rose-600 font-black text-sm mt-1">{fmt(totalAccumulatedDue)}</p></> : <>{pill(record?.status || "Due")}<p className="text-gray-900 font-bold text-sm mt-1">{fmt(totalAccumulatedDue)}</p></>}
-      </div>
-      <button onClick={(e) => { e.stopPropagation(); if (!isFullyPaid) onPayNow(tenant._id, payable, payable[0]?.monthYear); }} disabled={isFullyPaid} className={`ml-2 px-3 py-1.5 text-xs rounded-lg font-semibold disabled:opacity-30 disabled:cursor-not-allowed text-white transition-all active:scale-95 shrink-0 ${hasPreviousPending ? "bg-rose-500 hover:bg-rose-600" : "bg-amber-500 hover:bg-amber-600"}`}>Pay</button>
-    </div>
+    </>
   );
 }
 
@@ -201,7 +339,6 @@ function RoomAllocator({ currentAlloc, onSelect }) {
     })();
   }, []);
 
-  // Propagate selection upward whenever bed is chosen
   useEffect(() => {
     if (!selectedBed || !selectedRoom || !selectedFloor || !selectedBuilding) return;
     const building = buildings.find((b) => b._id === selectedBuilding);
@@ -303,6 +440,9 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   const [loading, setLoading] = useState(true);
   const [viewingDoc, setViewingDoc] = useState(null);
 
+  // Profile photo popup state
+  const [showProfilePopup, setShowProfilePopup] = useState(false);
+
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
@@ -325,7 +465,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
 
   useEffect(() => { load(); }, [load, onPaymentDone]);
 
-  // Populate edit form when data loads
   useEffect(() => {
     if (data?.tenant) {
       const t = data.tenant;
@@ -347,7 +486,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   const handleSaveEdit = async () => {
     setSaving(true); setSaveError("");
     try {
-      // 1. Update tenant basic fields
       const r = await fetch(`${API}/tenants/${tenantId}`, {
         method: "PUT",
         headers: authHeader(),
@@ -365,7 +503,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
       const d = await r.json();
       if (!r.ok) throw new Error(d.message || "Failed to update tenant.");
 
-      // 2. If room changed, reallocate bed
       if (editRoomMode && newAllocation) {
         const rb = await fetch(`${API}/tenants/${tenantId}/reallocate`, {
           method: "PUT",
@@ -407,16 +544,15 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   const { tenant, buildingDetails, currentRecord, remaining, history, pendingMonths, arrearsTotal, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = data || {};
   const phone = tenant?.phone?.replace(/\D/g, "");
   const payable = buildPayable(pendingMonths, currentRecord, remaining);
+  const passportPhoto = tenant?.documents?.passportPhoto;
 
   const handleViewDocument = (docUrl) => { if (docUrl) setViewingDoc(docUrl); };
 
   const inputClass = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-900 text-sm focus:outline-none focus:border-amber-400 transition-colors";
-  const readonlyClass = "w-full bg-white rounded-xl p-3 border border-gray-200";
 
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm">
-        {/* Modal container — full screen on mobile, max-w-2xl centered on larger screens */}
         <div className="relative w-full sm:max-w-2xl h-[95dvh] sm:h-auto sm:max-h-[92vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
 
           {/* Sticky Header */}
@@ -427,14 +563,12 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
             <div className="flex items-center gap-2">
               {!isEditing && !loading && (
                 <>
-                  {/* Edit button */}
                   <button
                     onClick={() => { setIsEditing(true); setSaveError(""); }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-500 border border-amber-200 text-amber-700 hover:text-white transition-colors"
                   >
                     ✏️ Edit
                   </button>
-                  {/* Vacate button */}
                   <button
                     onClick={() => setShowVacateConfirm(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-500 border border-rose-200 text-rose-700 hover:text-white transition-colors"
@@ -493,9 +627,31 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                 {/* ── TENANT HEADER (view mode) ── */}
                 {!isEditing && (
                   <div className="flex items-start gap-3 sm:gap-4">
-                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
-                      <span className="text-amber-700 font-black text-lg sm:text-xl">{tenant?.name?.[0]?.toUpperCase()}</span>
+                    {/* Profile avatar — clickable if passport photo exists */}
+                    <div className="relative shrink-0">
+                      <div
+                        onClick={() => passportPhoto && setShowProfilePopup(true)}
+                        title={passportPhoto ? "Click to view profile photo" : undefined}
+                        className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden border-2 flex items-center justify-center
+                          ${passportPhoto
+                            ? "border-amber-300 cursor-pointer hover:opacity-80 hover:scale-105 transition-all duration-150 shadow-md"
+                            : "border-amber-200 bg-amber-100"
+                          }`}
+                      >
+                        {passportPhoto ? (
+                          <img src={passportPhoto} alt={tenant?.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-amber-700 font-black text-lg sm:text-xl">{tenant?.name?.[0]?.toUpperCase()}</span>
+                        )}
+                      </div>
+                      {/* Small camera icon hint if photo exists */}
+                      {passportPhoto && (
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-amber-500 border-2 border-white flex items-center justify-center">
+                          <span className="text-[9px]">👁</span>
+                        </div>
+                      )}
                     </div>
+
                     <div className="flex-1 min-w-0">
                       <h3 className="text-gray-900 font-bold text-lg sm:text-xl truncate">{tenant?.name}</h3>
                       <p className="text-gray-500 text-sm truncate">{tenant?.email || "No email on record"}</p>
@@ -515,7 +671,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                 {/* ── EDIT FORM ── */}
                 {isEditing && (
                   <div className="space-y-4">
-                    {/* Basic Info */}
                     <div>
                       <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold mb-2">Basic Information</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -546,7 +701,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                       </div>
                     </div>
 
-                    {/* Father Details */}
                     <div>
                       <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold mb-2">Father's Details</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -561,7 +715,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                       </div>
                     </div>
 
-                    {/* Room / Bed Allocation */}
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold">Room Allocation</p>
@@ -573,7 +726,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                         </button>
                       </div>
 
-                      {/* Current allocation display */}
                       {!editRoomMode && (
                         <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 grid grid-cols-3 gap-2 text-center">
                           <div><p className="text-gray-400 text-[10px] uppercase">Building</p><p className="text-gray-800 text-sm font-semibold">{buildingDetails?.buildingName || "—"}</p></div>
@@ -594,12 +746,10 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                       )}
                     </div>
 
-                    {/* Save error */}
                     {saveError && (
                       <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-600">{saveError}</div>
                     )}
 
-                    {/* Save button */}
                     <button
                       onClick={handleSaveEdit}
                       disabled={saving}
@@ -613,7 +763,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                 {/* ── VIEW MODE DETAILS ── */}
                 {!isEditing && (
                   <>
-                    {/* Father Details */}
                     {(tenant?.fatherName || tenant?.fatherPhone) && (
                       <div className="rounded-xl border border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50 p-4">
                         <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><span>👨‍👦</span> Father's Details</h4>
@@ -635,7 +784,6 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                       </div>
                     )}
 
-                    {/* Info Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {[
                         ["Phone", tenant?.phone],
@@ -674,8 +822,14 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                             </div>
                           )}
                           {tenant?.documents?.passportPhoto && (
-                            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleViewDocument(tenant.documents.passportPhoto)}>
-                              <div className="text-2xl sm:text-3xl mb-2">📸</div>
+                            <div
+                              className="bg-white rounded-lg p-3 border border-gray-200 text-center cursor-pointer hover:shadow-md transition-shadow"
+                              onClick={() => setShowProfilePopup(true)}
+                            >
+                              {/* Show thumbnail of passport photo */}
+                              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-amber-200 mx-auto mb-2">
+                                <img src={tenant.documents.passportPhoto} alt="Passport" className="w-full h-full object-cover" />
+                              </div>
                               <p className="text-gray-700 font-medium text-xs sm:text-sm">Passport Photo</p>
                               <p className="text-gray-400 text-[10px] mt-1">Click to view</p>
                             </div>
@@ -730,13 +884,21 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                   </>
                 )}
 
-                {/* Bottom padding for mobile */}
                 <div className="h-4" />
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Profile photo popup */}
+      {showProfilePopup && passportPhoto && (
+        <ProfileImagePopup
+          imageUrl={passportPhoto}
+          name={tenant?.name}
+          onClose={() => setShowProfilePopup(false)}
+        />
+      )}
 
       {/* Vacate confirmation modal */}
       {showVacateConfirm && (
@@ -809,7 +971,7 @@ function PayModal({ tenantId, payableMonths, initialMonthYear, onClose, onSucces
           <div><p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Remaining Due</p><p className="text-3xl font-black text-amber-600">{fmt(maxAmount)}</p></div>
           <div><label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Amount Paid (₹)</label><input ref={inputRef} type="number" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePay()} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-amber-400" min="1" max={maxAmount} /></div>
           <div><label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Note (optional)</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-amber-400" placeholder="Cash, UPI, etc." /></div>
-          
+
           {error && <p className="text-rose-600 text-sm bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
           <button onClick={handlePay} disabled={loading} className="w-full py-3 rounded-xl font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all text-base">{loading ? "Processing…" : "Confirm Payment"}</button>
         </div>

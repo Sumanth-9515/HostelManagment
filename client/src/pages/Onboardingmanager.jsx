@@ -52,6 +52,292 @@ function StatCard({ icon, label, value, color }) {
   );
 }
 
+// Document Modal Component with smooth transitions
+function DocumentModal({ isOpen, onClose, documents, tenantName }) {
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  if (!isOpen && !isAnimating) return null;
+
+  const docsList = [
+    { src: documents?.passportPhoto, label: "Passport Photo", icon: "🖼️" },
+    { src: documents?.aadharFront, label: "Aadhar Front", icon: "🪪" },
+    { src: documents?.aadharBack, label: "Aadhar Back", icon: "🪪" },
+  ].filter(doc => doc.src);
+
+  const openInNewTab = (url) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <>
+      <div style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0,0,0,0.7)",
+        zIndex: 9998,
+        opacity: isOpen ? 1 : 0,
+        visibility: isOpen ? "visible" : "hidden",
+        transition: "opacity 0.3s ease, visibility 0.3s ease",
+      }} onClick={onClose} />
+      
+      <div style={{
+        position: "fixed",
+        top: "50%",
+        left: "50%",
+        transform: `translate(-50%, -50%) scale(${isOpen ? 1 : 0.95})`,
+        backgroundColor: "#fff",
+        borderRadius: 20,
+        padding: selectedDoc ? 0 : "24px",
+        width: selectedDoc ? "90%" : "90%",
+        maxWidth: selectedDoc ? "1200px" : "600px",
+        maxHeight: "90vh",
+        overflow: "auto",
+        zIndex: 9999,
+        opacity: isOpen ? 1 : 0,
+        visibility: isOpen ? "visible" : "hidden",
+        transition: "opacity 0.3s ease, transform 0.3s ease, visibility 0.3s ease",
+        boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)",
+        pointerEvents: isOpen ? "auto" : "none",
+      }}>
+        {selectedDoc ? (
+          <div>
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "16px 24px",
+              borderBottom: "1px solid #e2e8f0",
+              backgroundColor: "#f8fafc",
+              borderRadius: "20px 20px 0 0",
+            }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#0f172a" }}>
+                {tenantName} - Document Preview
+              </h3>
+              <button
+                onClick={() => setSelectedDoc(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: 20,
+                  cursor: "pointer",
+                  color: "#64748b",
+                  padding: "4px 8px",
+                  borderRadius: 4,
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#e2e8f0"}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: "24px", textAlign: "center" }}>
+              <img 
+                src={selectedDoc} 
+                alt="Document preview"
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "70vh",
+                  borderRadius: 8,
+                  boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+                }}
+              />
+              <div style={{ marginTop: 20 }}>
+                <button
+                  onClick={() => openInNewTab(selectedDoc)}
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: "#6366f1",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#4f46e5"}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#6366f1"}
+                >
+                  🔗 Open in New Tab
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 20,
+            }}>
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                📄 Documents - {tenantName}
+              </h3>
+              <button
+                onClick={onClose}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: 24,
+                  cursor: "pointer",
+                  color: "#64748b",
+                  padding: "4px 8px",
+                  borderRadius: 4,
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#e2e8f0"}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div style={{ display: "grid", gap: 16 }}>
+              {docsList.map((doc, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 16,
+                    padding: "16px",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    backgroundColor: "#fff",
+                  }}
+                  onClick={() => setSelectedDoc(doc.src)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#f8fafc";
+                    e.currentTarget.style.transform = "translateX(4px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "#fff";
+                    e.currentTarget.style.transform = "translateX(0)";
+                  }}
+                >
+                  <div style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    backgroundColor: "#f1f5f9",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}>
+                    <img 
+                      src={docUrl(doc.src)} 
+                      alt={doc.label}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: "#0f172a", marginBottom: 4 }}>
+                      {doc.icon} {doc.label}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      Click to preview and zoom
+                    </div>
+                  </div>
+                  <div style={{ color: "#6366f1", fontSize: 20 }}>→</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Download QR Code component
+function DownloadQR({ qrUrl, link }) {
+  const downloadQR = () => {
+    fetch(qrUrl)
+      .then(response => response.blob())
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `onboarding-qr-${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      })
+      .catch(console.error);
+  };
+
+  return (
+    <div style={{
+      marginTop: 18,
+      padding: 18,
+      background: "#f8fafc",
+      borderRadius: 12,
+      border: "1.5px solid #e2e8f0",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 10,
+      animation: "om-fade 0.3s ease",
+    }}>
+      <img src={qrUrl} alt="QR Code" width={160} height={160}
+        style={{ borderRadius: 8, display: "block" }} />
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500, display: "block", marginBottom: 8 }}>
+          Scan to open the onboarding form
+        </span>
+        <p style={{ 
+          fontSize: 11, 
+          color: "#4f46e5", 
+          fontWeight: 600, 
+          margin: "0 0 12px 0",
+          background: "#eef2ff",
+          padding: "6px 12px",
+          borderRadius: 6,
+          display: "inline-block"
+        }}>
+          📱 Please scan this code for onboarding to our hostel
+        </p>
+        <button
+          onClick={downloadQR}
+          style={{
+            padding: "8px 20px",
+            backgroundColor: "#6366f1",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            cursor: "pointer",
+            fontSize: 13,
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#4f46e5"}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#6366f1"}
+        >
+          ⬇️ Download QR Code
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 export default function OnboardingManager() {
   const [link,       setLink]       = useState("");
@@ -63,6 +349,8 @@ export default function OnboardingManager() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [qrVisible,  setQrVisible]  = useState(false);
   const [toast,      setToast]      = useState(null);
+  const [selectedTenant, setSelectedTenant] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   /* ── Load candidates who registered via onboarding link ── */
   useEffect(() => {
@@ -75,33 +363,24 @@ export default function OnboardingManager() {
   }, []);
 
   /* ── Generate link ── */
-/* ── Generate link ── */
-const generateLink = async () => {
-  setLinkLoading(true);
-  try {
-    const res  = await fetch(`${API}/tenants/generate-link`, { headers: authHeaders() });
-    const data = await res.json();
-    
-    if (res.ok) {
-      // --- FIX STARTS HERE ---
-      // 1. Extract the token from the end of the link sent by the backend
-      const token = data.link.split('/').pop(); 
+  const generateLink = async () => {
+    setLinkLoading(true);
+    try {
+      const res  = await fetch(`${API}/tenants/generate-link`, { headers: authHeaders() });
+      const data = await res.json();
       
-      // 2. Create a dynamic link using the current website's URL
-      // window.location.origin will be "http://localhost:5173" during dev
-      // and "https://hostel-management-system-sk.netlify.app" in production
-      const dynamicLink = `${window.location.origin}/tenant-register/${token}`;
-      
-      setLink(dynamicLink);
-      // --- FIX ENDS HERE ---
+      if (res.ok) {
+        const token = data.link.split('/').pop();
+        const dynamicLink = `${window.location.origin}/tenant-register/${token}`;
+        setLink(dynamicLink);
+      }
+      else showToast(data.message || "Failed to generate link", "error");
+    } catch {
+      showToast("Connection error. Please try again.", "error");
+    } finally {
+      setLinkLoading(false);
     }
-    else showToast(data.message || "Failed to generate link", "error");
-  } catch {
-    showToast("Connection error. Please try again.", "error");
-  } finally {
-    setLinkLoading(false);
-  }
-};
+  };
 
   /* ── Copy link ── */
   const copyLink = async () => {
@@ -119,6 +398,11 @@ const generateLink = async () => {
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
+  };
+
+  const openDocumentModal = (tenant) => {
+    setSelectedTenant(tenant);
+    setIsModalOpen(true);
   };
 
   /* ── Filtering ── */
@@ -147,16 +431,45 @@ const generateLink = async () => {
       fontFamily: "'Plus Jakarta Sans', sans-serif",
       padding: "clamp(16px,4vw,32px)",
       maxWidth: 1100, margin: "0 auto",
+      overflowX: "hidden",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; }
-        @keyframes om-fade { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes om-spin { to { transform: rotate(360deg); } }
+        @keyframes om-fade { 
+          from { opacity: 0; transform: translateY(10px); } 
+          to { opacity: 1; transform: translateY(0); } 
+        }
+        @keyframes om-spin { 
+          to { transform: rotate(360deg); } 
+        }
         .om-row:hover { background: #f8fafc !important; }
         .om-copy-btn:hover { background: #4f46e5 !important; }
         .om-gen-btn:hover { opacity: 0.9 !important; transform: translateY(-1px) !important; }
+        
+        /* Responsive styles */
+        @media (max-width: 768px) {
+          .om-table-container {
+            overflow-x: auto;
+          }
+          .om-table {
+            min-width: 768px;
+          }
+        }
       `}</style>
+
+      {/* Document Modal */}
+      {selectedTenant && (
+        <DocumentModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedTenant(null);
+          }}
+          documents={selectedTenant.documents}
+          tenantName={selectedTenant.name}
+        />
+      )}
 
       {/* ── Toast ── */}
       {toast && (
@@ -292,21 +605,8 @@ const generateLink = async () => {
               <div style={{ ...pill("#1e40af","#dbeafe") }}>🌐 Can be shared via WhatsApp / Email</div>
             </div>
 
-            {/* QR code */}
-            {qrVisible && (
-              <div style={{
-                marginTop: 18, padding: 18, background: "#f8fafc",
-                borderRadius: 12, border: "1.5px solid #e2e8f0",
-                display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 10,
-                animation: "om-fade 0.3s ease",
-              }}>
-                <img src={qrUrl} alt="QR Code" width={160} height={160}
-                  style={{ borderRadius: 8, display: "block" }} />
-                <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>
-                  Scan to open the onboarding form
-                </span>
-              </div>
-            )}
+            {/* QR code with download option */}
+            {qrVisible && <DownloadQR qrUrl={qrUrl} link={link} />}
 
             {/* Share tips */}
             <div style={{
@@ -399,11 +699,11 @@ const generateLink = async () => {
         ) : (
           <>
             {/* Desktop table */}
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <div className="om-table-container" style={{ overflowX: "auto" }}>
+              <table className="om-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
-                    {["Candidate","Phone / Email","Joining Date","Rent","Allocation","Status"].map(h => (
+                    {["Candidate","Phone / Email","Joining Date","Rent","Allocation","Status","Documents"].map(h => (
                       <th key={h} style={{
                         padding: "10px 14px", textAlign: "left", fontSize: 11,
                         fontWeight: 700, color: "#64748b", letterSpacing: "0.05em",
@@ -449,25 +749,25 @@ const generateLink = async () => {
                             )}
                           </div>
                         </div>
-                      </td>
+                       </td>
 
                       {/* Phone / Email */}
                       <td style={{ padding: "12px 14px" }}>
                         <div style={{ color: "#0f172a", fontWeight: 500 }}>{t.phone}</div>
                         {t.email && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{t.email}</div>}
-                      </td>
+                        </td>
 
                       {/* Date */}
                       <td style={{ padding: "12px 14px", color: "#475569", whiteSpace: "nowrap" }}>
                         {t.joiningDate ? new Date(t.joiningDate).toLocaleDateString("en-IN", {
                           day: "2-digit", month: "short", year: "numeric"
                         }) : "—"}
-                      </td>
+                        </td>
 
                       {/* Rent */}
                       <td style={{ padding: "12px 14px", fontWeight: 600, color: "#0f172a" }}>
                         ₹{Number(t.rentAmount).toLocaleString("en-IN")}
-                      </td>
+                        </td>
 
                       {/* Allocation */}
                       <td style={{ padding: "12px 14px" }}>
@@ -483,7 +783,7 @@ const generateLink = async () => {
                         ) : (
                           <span style={{ ...pill("#92400e","#fef3c7"), fontSize: 11 }}>Unallocated</span>
                         )}
-                      </td>
+                        </td>
 
                       {/* Status */}
                       <td style={{ padding: "12px 14px" }}>
@@ -493,78 +793,32 @@ const generateLink = async () => {
                         }>
                           {t.status === "Active" ? "● Active" : "● Vacated"}
                         </span>
-                      </td>
+                        </td>
+
+                      {/* Documents Eye Icon */}
+                      <td style={{ padding: "12px 14px" }}>
+                        <button
+                          onClick={() => openDocumentModal(t)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            fontSize: 20,
+                            cursor: "pointer",
+                            padding: "4px 8px",
+                            borderRadius: 6,
+                            transition: "all 0.2s",
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f1f5f9"}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                          title="View Documents"
+                        >
+                          👁️
+                        </button>
+                        </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-
-            {/* Documents quick-view section */}
-            <div style={{ marginTop: 24 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, color: "#64748b",
-                textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 14 }}>
-                Document Overview
-              </h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 12 }}>
-                {filtered.map(t => {
-                  const docs = [
-                    { src: docUrl(t.documents?.passportPhoto), label: "Passport Photo", icon: "🖼️" },
-                    { src: docUrl(t.documents?.aadharFront),   label: "Aadhar Front",   icon: "🪪" },
-                    { src: docUrl(t.documents?.aadharBack),    label: "Aadhar Back",    icon: "🪪" },
-                  ];
-                  const allUploaded  = docs.every(d => !!d.src);
-                  const noneUploaded = docs.every(d => !d.src);
-                  return (
-                    <div key={t._id + "-docs"} style={{
-                      padding: 14, borderRadius: 12, background: "#fafbfc",
-                      border: `1.5px solid ${allUploaded ? "#bbf7d0" : noneUploaded ? "#fecaca" : "#fde68a"}`,
-                    }}>
-                      {/* Header row */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                        <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 13 }}>{t.name}</div>
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
-                          background: allUploaded ? "#d1fae5" : noneUploaded ? "#fee2e2" : "#fef3c7",
-                          color: allUploaded ? "#065f46" : noneUploaded ? "#991b1b" : "#92400e",
-                        }}>
-                          {allUploaded ? "✓ All Docs" : noneUploaded ? "✗ No Docs" : "⚠ Partial"}
-                        </span>
-                      </div>
-                      {/* Doc thumbnails */}
-                      <div style={{ display: "flex", gap: 10 }}>
-                        {docs.map(({ src, label, icon }) => (
-                          <div key={label} style={{ textAlign: "center", flex: 1 }}>
-                            {src ? (
-                              <a href={src} target="_blank" rel="noreferrer">
-                                <img src={src} alt={label} style={{
-                                  width: "100%", maxWidth: 56, height: 52, objectFit: "cover",
-                                  borderRadius: 8, border: "2px solid #10b981",
-                                  display: "block", margin: "0 auto",
-                                }} />
-                              </a>
-                            ) : (
-                              <div style={{
-                                width: "100%", maxWidth: 56, height: 52, margin: "0 auto",
-                                borderRadius: 8, border: "2px dashed #e2e8f0",
-                                background: "#f8fafc", display: "flex",
-                                alignItems: "center", justifyContent: "center",
-                                fontSize: 18, color: "#cbd5e1",
-                              }}>{icon}</div>
-                            )}
-                            <span style={{
-                              fontSize: 9, marginTop: 4, display: "block",
-                              color: src ? "#10b981" : "#ef4444", fontWeight: 600,
-                            }}>
-                              {src ? "✓ " : "✗ "}{label}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           </>
         )}
