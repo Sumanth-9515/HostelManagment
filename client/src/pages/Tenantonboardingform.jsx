@@ -160,31 +160,32 @@ export default function TenantOnboardingForm() {
   const { token } = useParams();
 
   const [pageStatus, setPageStatus] = useState("loading");
-  const [buildings, setBuildings]   = useState([]);
-  const [form, setForm]             = useState(INIT);
-  const [step, setStep]             = useState(1);
-  const [error, setError]           = useState("");
-  const [loading, setLoading]       = useState(false);
+  const [buildings, setBuildings] = useState([]);
+  const [form, setForm] = useState(INIT);
+  const [step, setStep] = useState(1);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
-  const [floors,      setFloors]     = useState([]);
-  const [rooms,       setRooms]      = useState([]);
-  const [availBeds,   setAvailBeds]  = useState([]);
+  const [floors, setFloors] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [availBeds, setAvailBeds] = useState([]);
   const [selBuilding, setSelBuilding] = useState("");
-  const [selFloor,    setSelFloor]   = useState("");
-  const [selRoom,     setSelRoom]    = useState("");
-  const [selBed,      setSelBed]     = useState("");
+  const [selFloor, setSelFloor] = useState("");
+  const [selRoom, setSelRoom] = useState("");
+  const [selBed, setSelBed] = useState("");
 
-  const [aadharFront,        setAadharFront]        = useState(null);
-  const [aadharBack,         setAadharBack]         = useState(null);
-  const [passportPhoto,      setPassportPhoto]      = useState(null);
+  const [aadharFront, setAadharFront] = useState(null);
+  const [aadharBack, setAadharBack] = useState(null);
+  const [passportPhoto, setPassportPhoto] = useState(null);
   const [aadharFrontPreview, setAadharFrontPreview] = useState("");
-  const [aadharBackPreview,  setAadharBackPreview]  = useState("");
-  const [passportPreview,    setPassportPreview]    = useState("");
+  const [aadharBackPreview, setAadharBackPreview] = useState("");
+  const [passportPreview, setPassportPreview] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const refs = {
-    aadharFront:   useRef(),
-    aadharBack:    useRef(),
+    aadharFront: useRef(),
+    aadharBack: useRef(),
     passportPhoto: useRef(),
   };
 
@@ -229,36 +230,80 @@ export default function TenantOnboardingForm() {
     if (file.size > 5 * 1024 * 1024) { setError("File must be under 5 MB"); return; }
     const reader = new FileReader();
     reader.onloadend = () => {
-      if (type === "aadharFront")   { setAadharFront(file);   setAadharFrontPreview(reader.result); }
-      if (type === "aadharBack")    { setAadharBack(file);    setAadharBackPreview(reader.result);  }
-      if (type === "passportPhoto") { setPassportPhoto(file); setPassportPreview(reader.result);    }
+      if (type === "aadharFront") { setAadharFront(file); setAadharFrontPreview(reader.result); }
+      if (type === "aadharBack") { setAadharBack(file); setAadharBackPreview(reader.result); }
+      if (type === "passportPhoto") { setPassportPhoto(file); setPassportPreview(reader.result); }
     };
     reader.readAsDataURL(file);
     setError("");
   };
 
   /* ── Validation ── */
-  const validate1 = () => {
-    if (!form.name.trim())                            return setError("Full name is required"), false;
-    if (!form.phone.trim() || form.phone.length < 10) return setError("Enter a valid 10-digit phone number"), false;
-    if (!form.permanentAddress.trim())                return setError("Permanent address is required"), false;
-    if (!form.joiningDate)                            return setError("Joining date is required"), false;
-    if (!form.rentAmount || Number(form.rentAmount) <= 0) return setError("Enter a valid rent amount"), false;
-    return true;
-  };
+const validate1 = () => {
+  let errors = {};
+
+  // ✅ Name (only letters + min 3 chars)
+  if (!/^[A-Za-z ]{3,}$/.test(form.name.trim())) {
+    errors.name = "Name must contain only letters (min 3 chars)";
+  }
+
+  // ✅ Phone (must start with 6-9 and exactly 10 digits)
+  if (!/^[6-9]\d{9}$/.test(form.phone)) {
+    errors.phone = "Phone must start with 6-9 and be 10 digits";
+  }
+
+  // ✅ Email (must contain @ and valid format)
+  if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+    errors.email = "Enter valid email";
+  }
+
+  // ✅ Father Name (same as name)
+  if (!/^[A-Za-z ]{3,}$/.test(form.fatherName.trim())) {
+    errors.fatherName = "Invalid father name";
+  }
+
+  // ✅ Father Phone (same rule)
+  if (!/^[6-9]\d{9}$/.test(form.fatherPhone)) {
+    errors.fatherPhone = "Enter valid father Phone Number";
+  }
+
+  // ✅ Address (minimum 10 characters)
+  if (!form.permanentAddress || form.permanentAddress.trim().length < 10) {
+    errors.permanentAddress = "Address must be at least 10 characters";
+  }
+
+  // ✅ Joining Date
+  if (!form.joiningDate) {
+    errors.joiningDate = "Required";
+  }
+
+  // ✅ Rent Amount (> 0)
+  if (!form.rentAmount || Number(form.rentAmount) <= 0) {
+    errors.rentAmount = "Invalid amount";
+  }
+
+  setFieldErrors(errors);
+
+  if (Object.keys(errors).length > 0) {
+    setError("Please fill all required fields correctly");
+    return false;
+  }
+
+  return true;
+};
 
   const validate2 = () => {
-    if (!aadharFront)   return setError("Please upload Aadhar Front"), false;
-    if (!aadharBack)    return setError("Please upload Aadhar Back"), false;
+    if (!aadharFront) return setError("Please upload Aadhar Front"), false;
+    if (!aadharBack) return setError("Please upload Aadhar Back"), false;
     if (!passportPhoto) return setError("Please upload Passport Photo"), false;
     return true;
   };
 
   const validate3 = () => {
     if (!selBuilding) return setError("Please select a building"), false;
-    if (!selFloor)    return setError("Please select a floor"), false;
-    if (!selRoom)     return setError("Please select a room"), false;
-    if (!selBed)      return setError("Please select a bed"), false;
+    if (!selFloor) return setError("Please select a floor"), false;
+    if (!selRoom) return setError("Please select a room"), false;
+    if (!selBed) return setError("Please select a bed"), false;
     return true;
   };
 
@@ -274,27 +319,27 @@ export default function TenantOnboardingForm() {
 
     setLoading(true);
     const fd = new FormData();
-    fd.append("linkToken",        token); // short code passed as-is
-    fd.append("name",             form.name.trim());
-    fd.append("phone",            form.phone.trim());
-    if (form.email)       fd.append("email",       form.email.trim());
-    if (form.fatherName)  fd.append("fatherName",  form.fatherName.trim());
+    fd.append("linkToken", token); // short code passed as-is
+    fd.append("name", form.name.trim());
+    fd.append("phone", form.phone.trim());
+    if (form.email) fd.append("email", form.email.trim());
+    if (form.fatherName) fd.append("fatherName", form.fatherName.trim());
     if (form.fatherPhone) fd.append("fatherPhone", form.fatherPhone.trim());
     fd.append("permanentAddress", form.permanentAddress.trim());
-    fd.append("joiningDate",      form.joiningDate);
-    fd.append("rentAmount",       form.rentAmount);
+    fd.append("joiningDate", form.joiningDate);
+    fd.append("rentAmount", form.rentAmount);
     // Advance: send 0 if blank
-    fd.append("advanceAmount",    form.advanceAmount ? String(Number(form.advanceAmount)) : "0");
-    fd.append("buildingId",       selBuilding);
-    fd.append("floorId",          selFloor);
-    fd.append("roomId",           selRoom);
-    fd.append("bedId",            selBed);
-    if (aadharFront)   fd.append("aadharFront",   aadharFront);
-    if (aadharBack)    fd.append("aadharBack",    aadharBack);
+    fd.append("advanceAmount", form.advanceAmount ? String(Number(form.advanceAmount)) : "0");
+    fd.append("buildingId", selBuilding);
+    fd.append("floorId", selFloor);
+    fd.append("roomId", selRoom);
+    fd.append("bedId", selBed);
+    if (aadharFront) fd.append("aadharFront", aadharFront);
+    if (aadharBack) fd.append("aadharBack", aadharBack);
     if (passportPhoto) fd.append("passportPhoto", passportPhoto);
 
     try {
-      const res  = await fetch(`${API}/tenants/register-via-link`, { method: "POST", body: fd });
+      const res = await fetch(`${API}/tenants/register-via-link`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) { setError(data.message || "Registration failed. Please try again."); return; }
       setSuccessMsg(data.message);
@@ -306,7 +351,12 @@ export default function TenantOnboardingForm() {
     }
   };
 
-  const set = k => e => { setForm(f => ({ ...f, [k]: e.target.value })); setError(""); };
+const set = k => e => {
+  setForm(f => ({ ...f, [k]: e.target.value }));
+
+  setFieldErrors(prev => ({ ...prev, [k]: "" }));
+  setError("");
+};
 
   /* ═══════ Render helpers ═══════ */
   const selStyle = { ...inp, paddingRight: 36, appearance: "none", cursor: "pointer" };
@@ -329,8 +379,10 @@ export default function TenantOnboardingForm() {
           This onboarding link is no longer valid. It may have expired (links are valid for 7 days)
           or the URL was incorrectly copied. Please contact your hostel manager for a new link.
         </p>
-        <div style={{ marginTop: 20, padding: "12px 16px", background: "#fef3c7", borderRadius: 10,
-          border: "1px solid #fcd34d", fontSize: 13, color: "#92400e" }}>
+        <div style={{
+          marginTop: 20, padding: "12px 16px", background: "#fef3c7", borderRadius: 10,
+          border: "1px solid #fcd34d", fontSize: 13, color: "#92400e"
+        }}>
           📞 Contact your manager for a fresh onboarding link.
         </div>
       </div>
@@ -385,12 +437,12 @@ export default function TenantOnboardingForm() {
         padding: "28px 24px 60px",
         position: "relative", overflow: "hidden",
       }}>
-        {[["-60px","-40px","200px","rgba(139,92,246,0.2)"],["auto","-30px","160px","rgba(16,185,129,0.12)","0px","auto"]].map(
-          ([top,right,size,color,bottom,left],i) => (
+        {[["-60px", "-40px", "200px", "rgba(139,92,246,0.2)"], ["auto", "-30px", "160px", "rgba(16,185,129,0.12)", "0px", "auto"]].map(
+          ([top, right, size, color, bottom, left], i) => (
             <div key={i} style={{
-              position:"absolute", top, right, bottom, left,
-              width:size, height:size, borderRadius:"50%",
-              background:color, filter:"blur(50px)", pointerEvents:"none",
+              position: "absolute", top, right, bottom, left,
+              width: size, height: size, borderRadius: "50%",
+              background: color, filter: "blur(50px)", pointerEvents: "none",
             }} />
           )
         )}
@@ -401,7 +453,7 @@ export default function TenantOnboardingForm() {
               border: "1px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center",
               justifyContent: "center", fontSize: 17,
             }}>🏨</div>
-            <span style={{ color: "#fff", fontSize: 15, fontWeight: 700, letterSpacing: "0.08em" }}>HOSTELIQ</span>
+            <span style={{ color: "#fff", fontSize: 15, fontWeight: 700, letterSpacing: "0.08em" }}>Nilayam.com</span>
           </div>
           <h1 style={{ color: "#fff", fontSize: "clamp(20px,5vw,26px)", fontWeight: 800, margin: "0 0 6px", lineHeight: 1.2 }}>
             Tenant Onboarding Form
@@ -439,26 +491,64 @@ export default function TenantOnboardingForm() {
               <SectionLabel>Personal Information</SectionLabel>
 
               <TwoCol>
-                <Field label="Full Name *">
-                  <FocusInput placeholder="e.g. Rahul Sharma" value={form.name} onChange={set("name")} />
-                </Field>
+           <Field label="Full Name *">
+  <FocusInput
+    placeholder="e.g. Rahul Sharma"
+    value={form.name}
+    onChange={set("name")}
+  />
+  {fieldErrors.name && (
+    <span style={{ color: "red", fontSize: 11 }}>
+      {fieldErrors.name}
+    </span>
+  )}
+</Field>
                 <Field label="Phone Number *">
                   <FocusInput type="tel" placeholder="10-digit mobile" value={form.phone} onChange={set("phone")} />
+                  {fieldErrors.phone && (
+  <span style={{ color: "red", fontSize: 11 }}>
+    {fieldErrors.phone}
+  </span>
+)}
                 </Field>
               </TwoCol>
 
               <TwoCol>
                 <Field label="Email Address">
                   <FocusInput type="email" placeholder="you@email.com" value={form.email} onChange={set("email")} />
+                  {fieldErrors.email && (
+  <span style={{ color: "red", fontSize: 11 }}>
+    {fieldErrors.email}
+  </span>
+)}
                 </Field>
-                <Field label="Father's Name">
-                  <FocusInput placeholder="Father's full name" value={form.fatherName} onChange={set("fatherName")} />
-                </Field>
+           <Field label="Father's Name *">
+  <FocusInput
+    placeholder="Father's full name"
+    value={form.fatherName}
+    onChange={set("fatherName")}
+  />
+  {fieldErrors.fatherName && (
+    <span style={{ color: "red", fontSize: 11 }}>
+      {fieldErrors.fatherName}
+    </span>
+  )}
+</Field>
               </TwoCol>
 
-              <Field label="Father's Phone">
-                <FocusInput type="tel" placeholder="Father's mobile number" value={form.fatherPhone} onChange={set("fatherPhone")} />
-              </Field>
+             <Field label="Father's Phone *">
+  <FocusInput
+    type="tel"
+    placeholder="Father's mobile number"
+    value={form.fatherPhone}
+    onChange={set("fatherPhone")}
+  />
+  {fieldErrors.fatherPhone && (
+    <span style={{ color: "red", fontSize: 11 }}>
+      {fieldErrors.fatherPhone}
+    </span>
+  )}
+</Field>
 
               <Field label="Permanent Address *">
                 <FocusTarea placeholder="Full permanent address with city and state" value={form.permanentAddress} onChange={set("permanentAddress")} />
@@ -516,8 +606,8 @@ export default function TenantOnboardingForm() {
               }}>
                 {[
                   { label: "Aadhar Front", ok: !!aadharFront },
-                  { label: "Aadhar Back",  ok: !!aadharBack  },
-                  { label: "Passport",     ok: !!passportPhoto },
+                  { label: "Aadhar Back", ok: !!aadharBack },
+                  { label: "Passport", ok: !!passportPhoto },
                 ].map(({ label, ok }) => (
                   <div key={label} style={{ textAlign: "center", fontSize: 11 }}>
                     <div style={{ fontSize: 16 }}>{ok ? "✅" : "⬜"}</div>

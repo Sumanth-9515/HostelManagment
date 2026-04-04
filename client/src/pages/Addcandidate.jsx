@@ -11,6 +11,7 @@ const INIT = {
 
 export default function AddCandidate() {
   const [form, setForm] = useState(INIT);
+  const [error, setError] = useState("");
   const [buildings, setBuildings] = useState([]);
   const [floors, setFloors] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -23,6 +24,7 @@ export default function AddCandidate() {
   const [step, setStep] = useState(1);
   const { toast, show } = useToast();
   
+  
   // File upload states
   const [aadharFront, setAadharFront] = useState(null);
   const [aadharBack, setAadharBack] = useState(null);
@@ -30,6 +32,7 @@ export default function AddCandidate() {
   const [aadharFrontPreview, setAadharFrontPreview] = useState("");
   const [aadharBackPreview, setAadharBackPreview] = useState("");
   const [passportPhotoPreview, setPassportPhotoPreview] = useState("");
+  const [fatherPhoneError, setFatherPhoneError] = useState("");
   
   const fileInputRefs = {
     aadharFront: useRef(),
@@ -363,26 +366,80 @@ export default function AddCandidate() {
                   autoFocus 
                 />
               </div>
-              <div>
-                <label style={lblStyle}>Phone *</label>
-                <input 
-                  style={inputStyle} 
-                  value={form.phone} 
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })} 
-                  placeholder="9876543210" 
-                />
-              </div>
+<div>
+  <label style={lblStyle}>Phone *</label>
+
+  <input
+    style={{
+      ...inputStyle,
+      borderColor: error ? "red" : "#ccc"
+    }}
+    value={form.phone}
+    onChange={(e) => {
+      let value = e.target.value;
+
+      // Allow only numbers
+      if (!/^\d*$/.test(value)) return;
+
+      // Limit to 10 digits
+      if (value.length > 10) return;
+
+      setForm({ ...form, phone: value });
+
+      // Validation
+      if (value.length === 0) {
+        setError("Phone number is required");
+      } else if (!/^[6-9]/.test(value)) {
+        setError("Phone number must start with 6, 7, 8, or 9");
+      } else if (value.length !== 10) {
+        setError("Phone number must be 10 digits");
+      } else {
+        setError("");
+      }
+    }}
+    placeholder="9876543210"
+  />
+
+  {error && (
+    <span style={{ color: "red", fontSize: "12px" }}>
+      {error}
+    </span>
+  )}
+</div>
             </div>
             
-            <div>
-              <label style={lblStyle}>Email</label>
-              <input 
-                style={inputStyle} 
-                value={form.email} 
-                onChange={(e) => setForm({ ...form, email: e.target.value })} 
-                placeholder="john@email.com" 
-              />
-            </div>
+<div>
+  <label style={lblStyle}>Email</label>
+
+  <input
+    style={{
+      ...inputStyle,
+      borderColor: form.emailError ? "red" : "#ccc"
+    }}
+    value={form.email}
+    onChange={(e) => {
+      let value = e.target.value;
+
+      setForm({
+        ...form,
+        email: value,
+        emailError:
+          value.length === 0
+            ? ""
+            : !value.includes("@")
+            ? "Please enter a valid email address"
+            : ""
+      });
+    }}
+    placeholder="john@email.com"
+  />
+
+  {form.emailError && (
+    <span style={{ color: "red", fontSize: "12px" }}>
+      {form.emailError}
+    </span>
+  )}
+</div>
             
             <div style={{ 
               display: "grid", 
@@ -398,15 +455,46 @@ export default function AddCandidate() {
                   placeholder="Father's full name" 
                 />
               </div>
-              <div>
-                <label style={lblStyle}>Father's Phone</label>
-                <input 
-                  style={inputStyle} 
-                  value={form.fatherPhone} 
-                  onChange={(e) => setForm({ ...form, fatherPhone: e.target.value })} 
-                  placeholder="Father's contact number" 
-                />
-              </div>
+            <div>
+  <label style={lblStyle}>Father's Phone</label>
+
+  <input
+    style={{
+      ...inputStyle,
+      borderColor: fatherPhoneError ? "red" : "#ccc"
+    }}
+    value={form.fatherPhone}
+    onChange={(e) => {
+      let value = e.target.value;
+
+      // Only numbers
+      if (!/^\d*$/.test(value)) return;
+
+      // Max 10 digits
+      if (value.length > 10) return;
+
+      setForm({ ...form, fatherPhone: value });
+
+      // Validation (optional field)
+      if (value.length === 0) {
+        setFatherPhoneError(""); // no error if empty
+      } else if (!/^[6-9]/.test(value)) {
+        setFatherPhoneError("Father's phone number must start with 6, 7, 8, or 9");
+      } else if (value.length !== 10) {
+        setFatherPhoneError("Father's phone number must be 10 digits");
+      } else {
+        setFatherPhoneError("");
+      }
+    }}
+    placeholder="Father's contact number"
+  />
+
+  {fatherPhoneError && (
+    <span style={{ color: "red", fontSize: "12px" }}>
+      {fatherPhoneError}
+    </span>
+  )}
+</div>
             </div>
             
             <div>

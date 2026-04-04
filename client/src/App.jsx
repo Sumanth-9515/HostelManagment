@@ -22,6 +22,7 @@ import RentManagement from "./pages/Rentmanagement.jsx";
 import ManageLogins from "./pages/master/Managelogins.jsx";
 import TenantOnboardingForm from "./pages/Tenantonboardingform.jsx";
 import OnboardingManager from "./pages/Onboardingmanager.jsx";
+import CandidatesManagement from "./pages/Candidatesmanagement.jsx";
 
 // ── Auth guards ───────────────────────────────────────────────────────────────
 function RequireUser({ children }) {
@@ -65,6 +66,9 @@ export default function App() {
       } />
       <Route path="/addcandidate" element={
         <RequireUser><Layout><AddCandidate /></Layout></RequireUser>
+      } />
+            <Route path="/candidates" element={
+        <RequireUser><Layout><CandidatesManagement/></Layout></RequireUser>
       } />
     <Route path="/rent-management" element={
         <RequireUser><Layout><RentManagement/></Layout></RequireUser>

@@ -131,7 +131,7 @@ async function sendBrevoEmail(toEmail, toName, subject, htmlContent) {
   if (!senderEmail) throw new Error("BREVO_SENDER_EMAIL is not set in environment variables.");
 
   const payload = {
-    sender: { name: (process.env.BREVO_SENDER_NAME || "Hostel Manager").trim(), email: senderEmail },
+    sender: { name: (process.env.BREVO_SENDER_NAME || "Nivas Hostel Manager").trim(), email: senderEmail },
     to: [{ email: toEmail, name: toName }],
     subject,
     htmlContent,
@@ -150,9 +150,195 @@ async function sendBrevoEmail(toEmail, toName, subject, htmlContent) {
 const fmtINR = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : "—";
 
-function emailWrapper({ accentColor, icon, title, bodyHtml }) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>${title}</title><style>body{margin:0;padding:0;background:#f4f6fb;font-family:'Segoe UI',Arial,sans-serif;}a{color:${accentColor};}.wrapper{max-width:600px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);}.header{background:${accentColor};padding:32px 40px 24px;text-align:center;}.header .icon{font-size:40px;display:block;margin-bottom:8px;}.header h1{margin:0;color:#fff;font-size:22px;font-weight:700;}.header p{margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:14px;}.body{padding:32px 40px;}.greeting{font-size:17px;color:#1a202c;font-weight:600;margin-bottom:6px;}.sub{font-size:14px;color:#4a5568;margin-bottom:24px;line-height:1.6;}.card{background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;padding:20px 24px;margin-bottom:20px;}.card-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #e2e8f0;}.card-row:last-child{border-bottom:none;}.card-label{color:#718096;font-size:13px;}.card-value{color:#1a202c;font-size:13px;font-weight:600;}.amount-box{background:${accentColor}10;border:1.5px solid ${accentColor}40;border-radius:10px;padding:16px 20px;text-align:center;margin-bottom:20px;}.amount-box .amount-label{color:#718096;font-size:12px;text-transform:uppercase;margin-bottom:4px;}.amount-box .amount-value{color:${accentColor};font-size:28px;font-weight:800;}.badge{display:inline-block;padding:4px 12px;border-radius:50px;font-size:12px;font-weight:700;}.note-box{border-left:4px solid ${accentColor};background:${accentColor}08;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#4a5568;line-height:1.6;}.footer{background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 40px;text-align:center;}.footer p{margin:0;color:#a0aec0;font-size:12px;line-height:1.8;}.arrears-table{width:100%;border-collapse:collapse;margin-bottom:16px;}.arrears-table th{background:#fef2f2;color:#991b1b;font-size:12px;text-transform:uppercase;padding:8px 12px;text-align:left;border-bottom:2px solid #fecaca;}.arrears-table td{padding:8px 12px;font-size:13px;border-bottom:1px solid #fee2e2;}.arrears-table tr:last-child td{border-bottom:none;}</style></head><body><div class="wrapper"><div class="header"><span class="icon">${icon}</span><h1>${title}</h1><p>${process.env.BREVO_SENDER_NAME || "Hostel Manager"}</p></div><div class="body">${bodyHtml}</div><div class="footer"><p>This is an automated message from ${process.env.BREVO_SENDER_NAME || "Hostel Manager"}.<br/>Please do not reply to this email. For queries, contact your hostel management.</p></div></div></body></html>`;
+// ── Email Templates ───────────────────────────────────────────────────────────
+
+function emailWrapper({ accentColor, icon, title, badgeLabel, badgeColor, bodyHtml }) {
+  const senderName = process.env.BREVO_SENDER_NAME || "Hostel Manager";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title}</title>
+  <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+  <style>
+    /* ── Reset ── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { margin: 0; padding: 0; background: #f0f4f8; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-text-size-adjust: 100%; }
+    img { border: 0; display: block; max-width: 100%; }
+    a { text-decoration: none; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    td { padding: 0; }
+
+    /* ── Layout ── */
+    .email-bg   { background: #f0f4f8; padding: 28px 16px 40px; }
+    .email-card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.10); }
+
+    /* ── Header ── */
+    .header { background: linear-gradient(135deg, ${accentColor} 0%, ${accentColor}cc 100%); padding: 36px 40px 28px; text-align: center; position: relative; }
+    .header-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; display: block; }
+    .header-title { color: #ffffff; font-size: 22px; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 4px; }
+    .header-sub { color: rgba(255,255,255,0.82); font-size: 13px; }
+    .header-badge { display: inline-block; margin-top: 14px; background: rgba(255,255,255,0.22); border: 1px solid rgba(255,255,255,0.40); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; padding: 5px 16px; border-radius: 50px; text-transform: uppercase; }
+
+    /* ── Body ── */
+    .body { padding: 32px 36px; }
+    .greeting { font-size: 18px; font-weight: 700; color: #1a202c; margin-bottom: 6px; }
+    .sub-text  { font-size: 14px; color: #4a5568; line-height: 1.7; margin-bottom: 28px; }
+
+    /* ── Amount Box ── */
+    .amount-box { background: ${accentColor}0f; border: 2px solid ${accentColor}30; border-radius: 14px; padding: 20px; text-align: center; margin-bottom: 24px; }
+    .amount-label { color: #718096; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .amount-value { color: ${accentColor}; font-size: 36px; font-weight: 900; letter-spacing: -1px; line-height: 1; }
+    .amount-note  { color: #718096; font-size: 12px; margin-top: 8px; }
+
+    /* ── Status Pill ── */
+    .status-pill { display: inline-block; padding: 5px 16px; border-radius: 50px; font-size: 12px; font-weight: 700; background: ${badgeColor || accentColor + '20'}; color: ${accentColor}; border: 1px solid ${accentColor}40; margin-top: 12px; }
+
+    /* ── Section Cards ── */
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #a0aec0; margin-bottom: 10px; margin-top: 24px; }
+    .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; margin-bottom: 16px; }
+    .info-card-header { background: ${accentColor}0c; border-bottom: 1px solid ${accentColor}20; padding: 10px 18px; display: flex; align-items: center; gap: 8px; }
+    .info-card-header-icon { font-size: 15px; }
+    .info-card-header-label { font-size: 12px; font-weight: 700; color: ${accentColor}; text-transform: uppercase; letter-spacing: 0.8px; }
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 18px; border-bottom: 1px solid #edf2f7; flex-wrap: wrap; gap: 4px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #718096; font-size: 13px; min-width: 120px; }
+    .info-value { color: #1a202c; font-size: 13px; font-weight: 600; text-align: right; word-break: break-word; }
+    .info-value.accent { color: ${accentColor}; }
+
+    /* ── Arrears Table ── */
+    .arrears-wrap { background: #fff5f5; border: 1.5px solid #fed7d7; border-radius: 14px; overflow: hidden; margin-bottom: 20px; }
+    .arrears-header { background: #fef2f2; padding: 12px 18px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #fed7d7; }
+    .arrears-header-text { font-size: 13px; font-weight: 700; color: #c53030; }
+    .arrears-table { width: 100%; }
+    .arrears-table th { background: #fef2f2; color: #991b1b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; padding: 8px 14px; text-align: left; border-bottom: 1px solid #fecaca; }
+    .arrears-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #fee2e2; color: #2d3748; }
+    .arrears-table tr:last-child td { border-bottom: none; }
+    .arrears-table .amt-paid { color: #276749; font-weight: 600; }
+    .arrears-table .amt-due  { color: #c53030; font-weight: 700; }
+    .arrears-total-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-top: 2px solid #fecaca; background: #fef2f2; }
+    .arrears-total-label { font-size: 13px; font-weight: 700; color: #991b1b; }
+    .arrears-total-value { font-size: 16px; font-weight: 800; color: #c53030; }
+
+    /* ── Note Box ── */
+    .note-box { border-left: 4px solid ${accentColor}; background: ${accentColor}08; border-radius: 0 10px 10px 0; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #4a5568; line-height: 1.7; }
+
+    /* ── Divider ── */
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+
+    /* ── Footer ── */
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 22px 36px 24px; text-align: center; }
+    .footer-logo { font-size: 16px; font-weight: 800; color: ${accentColor}; margin-bottom: 6px; letter-spacing: -0.3px; }
+    .footer-text { color: #a0aec0; font-size: 12px; line-height: 1.8; }
+    .footer-text a { color: #718096; text-decoration: underline; }
+
+    /* ── Mobile ── */
+    @media only screen and (max-width: 600px) {
+      .email-bg  { padding: 16px 8px 32px; }
+      .header    { padding: 28px 20px 22px; }
+      .header-title { font-size: 19px; }
+      .body      { padding: 24px 20px; }
+      .footer    { padding: 20px 20px 22px; }
+      .amount-value { font-size: 30px; }
+      .info-row  { flex-direction: column; align-items: flex-start; }
+      .info-value { text-align: left; }
+      .arrears-table th, .arrears-table td { padding: 8px 10px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+<div class="email-bg">
+  <div class="email-card">
+
+    <!-- Header -->
+    <div class="header">
+      <span class="header-icon">${icon}</span>
+      <div class="header-title">${title}</div>
+      <div class="header-sub">${senderName}</div>
+      ${badgeLabel ? `<div class="header-badge">${badgeLabel}</div>` : ""}
+    </div>
+
+    <!-- Body -->
+    <div class="body">
+      ${bodyHtml}
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div class="footer-logo">🏠 ${senderName}</div>
+      <div class="footer-text">
+        This is an automated message. Please do not reply to this email.<br/>
+        For any queries, contact your hostel management directly.
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>`;
 }
+
+// ── Shared helpers for email body sections ────────────────────────────────────
+
+function buildTenantDetailsSection(tenant, accentColor) {
+  const initials = tenant.name
+    ? tenant.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase()
+    : "??";
+
+  const rows = [
+    tenant.name        && { label: "Full Name",      value: tenant.name },
+    tenant.email       && { label: "Email Address",  value: tenant.email },
+    tenant.phone       && { label: "Phone",          value: tenant.phone },
+    tenant.joiningDate && { label: "Member Since",   value: fmtDate(tenant.joiningDate) },
+  ].filter(Boolean);
+
+  return `
+    <div class="section-title">👤 Tenant Profile</div>
+    <div class="info-card">
+      <div class="info-card-header">
+        <span class="info-card-header-icon">🪪</span>
+        <span class="info-card-header-label">Personal Details</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 18px 10px;border-bottom:1px solid #edf2f7;flex-wrap:wrap;">
+      </div>
+      ${rows.map(r => `
+        <div class="info-row">
+          <span class="info-label">${r.label}</span>
+          <span class="info-value">${r.value}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+function buildRoomAllocationSection(buildingDetails) {
+  if (!buildingDetails) return "";
+
+  const rows = [
+    buildingDetails.buildingName  && { label: "Building",     value: buildingDetails.buildingName, icon: "🏢" },
+    buildingDetails.address       && { label: "Address",      value: buildingDetails.address,       icon: "📍" },
+    buildingDetails.floorName     && { label: "Floor",        value: `${buildingDetails.floorName}${buildingDetails.floorNumber ? ` (Floor ${buildingDetails.floorNumber})` : ""}`, icon: "🏗️" },
+    buildingDetails.roomNumber    && { label: "Room No.",     value: `Room ${buildingDetails.roomNumber}`, icon: "🚪" },
+    buildingDetails.shareType     && { label: "Occupancy",    value: buildingDetails.shareType,     icon: "🛏️" },
+  ].filter(Boolean);
+
+  if (rows.length === 0) return "";
+
+  return `
+    <div class="section-title">🏠 Room Allocation</div>
+    <div class="info-card">
+      <div class="info-card-header">
+        <span class="info-card-header-icon">📋</span>
+        <span class="info-card-header-label">Accommodation Details</span>
+      </div>
+      ${rows.map(r => `
+        <div class="info-row">
+          <span class="info-label">${r.icon} ${r.label}</span>
+          <span class="info-value">${r.value}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+// ── Individual Email Builders ─────────────────────────────────────────────────
 
 function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOverdue, daysUntilDue, pendingMonths = [], arrearsTotal = 0, totalAccumulatedDue = 0 }) {
   const remaining = record.rentAmount - record.paidAmount;
@@ -160,51 +346,90 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
   const hasPreviousPending = pendingMonths.length > 0;
   const accentColor = (isOverdue || hasPreviousPending) ? "#e53e3e" : "#d97706";
 
-  const statusBadge = isOverdue
-    ? `<span class="badge" style="background:#fee2e2;color:#c53030;">⚠️ ${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue</span>`
-    : `<span class="badge" style="background:#fef3c7;color:#b45309;">🕐 Due in ${daysUntilDue === 0 ? "Today" : `${daysUntilDue} Day${daysUntilDue > 1 ? "s" : ""}`}</span>`;
+  // Status info
+  let statusText, badgeLabel, statusPill;
+  if (hasPreviousPending) {
+    badgeLabel  = `${pendingMonths.length} Month${pendingMonths.length > 1 ? "s" : ""} Arrears`;
+    statusText  = `Your account has <strong style="color:#c53030;">unpaid rent from previous months</strong>. Total outstanding including current month is <strong style="color:#c53030;">${fmtINR(totalAccumulatedDue)}</strong>. Please clear all dues at the earliest to avoid penalties.`;
+    statusPill  = `<span class="status-pill">🚨 Urgent — Multiple Dues Pending</span>`;
+  } else if (isOverdue) {
+    badgeLabel  = `${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue`;
+    statusText  = `Your rent payment for <strong>${month}</strong> is <strong style="color:#c53030;">overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}</strong>. Please pay immediately to avoid late charges.`;
+    statusPill  = `<span class="status-pill">⚠️ ${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue</span>`;
+  } else {
+    badgeLabel  = daysUntilDue === 0 ? "Due Today" : `Due in ${daysUntilDue} Day${daysUntilDue > 1 ? "s" : ""}`;
+    statusText  = `This is a friendly reminder that your rent payment for <strong>${month}</strong> is ${daysUntilDue === 0 ? "<strong>due today</strong>" : `due in <strong>${daysUntilDue} day${daysUntilDue > 1 ? "s" : ""}</strong>`}. Kindly ensure timely payment.`;
+    statusPill  = `<span class="status-pill">🕐 ${badgeLabel}</span>`;
+  }
 
-  const buildingHtml = buildingDetails
-    ? `<div class="card-row"><span class="card-label">Building</span><span class="card-value">${buildingDetails.buildingName}</span></div>
-       <div class="card-row"><span class="card-label">Room</span><span class="card-value">Room ${buildingDetails.roomNumber}</span></div>`
-    : "";
-
-  const arrearsHtml = hasPreviousPending
-    ? `<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:10px;padding:16px 20px;margin-bottom:20px;">
-      <p style="margin:0 0 10px;color:#991b1b;font-weight:700;font-size:14px;">⚠️ Outstanding Arrears — ${pendingMonths.length} Month${pendingMonths.length > 1 ? "s" : ""} Unpaid</p>
+  // Arrears block
+  const arrearsHtml = hasPreviousPending ? `
+    <div class="section-title">📂 Arrears Breakdown</div>
+    <div class="arrears-wrap">
+      <div class="arrears-header">
+        <span style="font-size:16px;">⚠️</span>
+        <span class="arrears-header-text">${pendingMonths.length} Unpaid Month${pendingMonths.length > 1 ? "s" : ""} — Immediate Action Required</span>
+      </div>
       <table class="arrears-table">
-        <thead><tr><th>Month</th><th style="text-align:right;">Due</th><th style="text-align:right;">Paid</th><th style="text-align:right;">Remaining</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th style="text-align:right;">Rent Due</th>
+            <th style="text-align:right;">Paid</th>
+            <th style="text-align:right;">Balance</th>
+          </tr>
+        </thead>
         <tbody>
-          ${pendingMonths.map(pm => `<tr><td>${new Date(pm.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" })}</td><td style="text-align:right;">${fmtINR(pm.rentAmount)}</td><td style="text-align:right;color:#276749;">${fmtINR(pm.paidAmount)}</td><td style="text-align:right;color:#c53030;font-weight:700;">${fmtINR(pm.rentAmount - pm.paidAmount)}</td></tr>`).join("")}
+          ${pendingMonths.map(pm => `
+            <tr>
+              <td>${new Date(pm.dueDate).toLocaleString("en-IN", { month: "short", year: "numeric" })}</td>
+              <td style="text-align:right;">${fmtINR(pm.rentAmount)}</td>
+              <td style="text-align:right;" class="amt-paid">${fmtINR(pm.paidAmount)}</td>
+              <td style="text-align:right;" class="amt-due">${fmtINR(pm.rentAmount - pm.paidAmount)}</td>
+            </tr>`).join("")}
         </tbody>
       </table>
-      <div style="text-align:right;padding-top:8px;border-top:2px solid #fecaca;margin-top:4px;">
-        <span style="color:#991b1b;font-size:16px;font-weight:800;">Total Previous Arrears: ${fmtINR(arrearsTotal)}</span>
-      </div></div>`
-    : "";
+      <div class="arrears-total-row">
+        <span class="arrears-total-label">Previous Arrears Total</span>
+        <span class="arrears-total-value">${fmtINR(arrearsTotal)}</span>
+      </div>
+    </div>` : "";
 
   const bodyHtml = `
-    <p class="greeting">Hello ${tenant.name},</p>
-    <p class="sub">${
-      hasPreviousPending
-        ? `Your account has <strong style="color:#c53030;">unpaid rent from previous months</strong>. The total outstanding amount including the current month is <strong style="color:#c53030;">${fmtINR(totalAccumulatedDue)}</strong>. Please clear all dues at the earliest.`
-        : isOverdue
-        ? `Your rent payment for <strong>${month}</strong> is <strong style="color:#c53030;">overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}</strong>.`
-        : `This is a friendly reminder that your rent payment for <strong>${month}</strong> is coming up.`
-    }</p>
-    ${arrearsHtml}
+    <p class="greeting">Hello, ${tenant.name}! 👋</p>
+    <p class="sub-text">${statusText}</p>
+
+    <!-- Amount Box -->
     <div class="amount-box">
-      <div class="amount-label">${hasPreviousPending ? "Total Amount Due (All Months)" : "Amount Due"}</div>
+      <div class="amount-label">${hasPreviousPending ? "Total Outstanding (All Months)" : "Amount Due This Month"}</div>
       <div class="amount-value">${fmtINR(hasPreviousPending ? totalAccumulatedDue : remaining)}</div>
-      <div style="margin-top:8px;">${statusBadge}</div>
+      <div>${statusPill}</div>
+      ${hasPreviousPending ? `<div class="amount-note">Includes ${fmtINR(remaining)} for current month + ${fmtINR(arrearsTotal)} arrears</div>` : ""}
     </div>
-    <div class="card">
-      <div class="card-row"><span class="card-label">Billing Month</span><span class="card-value">${month}</span></div>
-      <div class="card-row"><span class="card-label">Due Date</span><span class="card-value">${fmtDate(record.dueDate)}</span></div>
-      <div class="card-row"><span class="card-label">Remaining This Month</span><span class="card-value" style="color:${accentColor};">${fmtINR(remaining)}</span></div>
-      ${buildingHtml}
+
+    <!-- Current Month Summary -->
+    <div class="section-title">📅 Current Billing Cycle</div>
+    <div class="info-card">
+      <div class="info-card-header">
+        <span class="info-card-header-icon">💳</span>
+        <span class="info-card-header-label">Payment Details</span>
+      </div>
+      <div class="info-row"><span class="info-label">Billing Month</span><span class="info-value">${month}</span></div>
+      <div class="info-row"><span class="info-label">Due Date</span><span class="info-value">${fmtDate(record.dueDate)}</span></div>
+      <div class="info-row"><span class="info-label">Monthly Rent</span><span class="info-value">${fmtINR(record.rentAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Paid So Far</span><span class="info-value" style="color:#276749;">${fmtINR(record.paidAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Remaining This Month</span><span class="info-value accent">${fmtINR(remaining)}</span></div>
     </div>
-  `;
+
+    ${arrearsHtml}
+    ${buildTenantDetailsSection(tenant, accentColor)}
+    ${buildRoomAllocationSection(buildingDetails)}
+
+    <hr class="divider" />
+    <div class="note-box">
+      💡 <strong>Note:</strong> If you have already made this payment, please disregard this reminder. 
+      Payments may take a short time to reflect. Contact hostel management if you face any issues.
+    </div>`;
 
   const subject = hasPreviousPending
     ? `🚨 Urgent: ${pendingMonths.length} Month(s) Rent Arrears — ${fmtINR(totalAccumulatedDue)} Total Outstanding`
@@ -212,28 +437,127 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
     ? `⚠️ Rent Overdue by ${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} — ${month}`
     : `🔔 Rent Reminder: Due ${daysUntilDue === 0 ? "Today" : `in ${daysUntilDue} Day${daysUntilDue > 1 ? "s" : ""}`} — ${month}`;
 
-  return { subject, html: emailWrapper({ accentColor, icon: hasPreviousPending ? "🚨" : isOverdue ? "⚠️" : "🔔", title: hasPreviousPending ? "Urgent: Rent Arrears Notice" : isOverdue ? "Rent Payment Overdue" : "Rent Payment Reminder", bodyHtml }) };
+  const icon  = hasPreviousPending ? "🚨" : isOverdue ? "⚠️" : "🔔";
+  const title = hasPreviousPending ? "Urgent: Rent Arrears Notice" : isOverdue ? "Rent Payment Overdue" : "Rent Payment Reminder";
+
+  return { subject, html: emailWrapper({ accentColor, icon, title, badgeLabel, bodyHtml }) };
 }
 
 function buildFullPaymentEmail({ tenant, record, paymentAmount, buildingDetails }) {
   const month = new Date(record.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" });
+  const accentColor = "#276749";
+
   const bodyHtml = `
-    <p class="greeting">Hello ${tenant.name},</p>
-    <p class="sub">Your rent for <strong>${month}</strong> has been fully paid. Thank you!</p>
-    <div class="amount-box"><div class="amount-label">Amount Paid</div><div class="amount-value">${fmtINR(paymentAmount)}</div></div>
-  `;
-  return { subject: `✅ Rent Paid — ${month}`, html: emailWrapper({ accentColor: "#276749", icon: "✅", title: "Rent Payment Confirmed", bodyHtml }) };
+    <p class="greeting">Thank you, ${tenant.name}! 🎉</p>
+    <p class="sub-text">
+      Your rent payment for <strong>${month}</strong> has been received in full. 
+      Your account is now up to date. We appreciate your timely payment!
+    </p>
+
+    <!-- Amount Box -->
+    <div class="amount-box">
+      <div class="amount-label">Total Amount Paid</div>
+      <div class="amount-value">${fmtINR(paymentAmount)}</div>
+      <div><span class="status-pill">✅ Payment Complete</span></div>
+    </div>
+
+    <!-- Payment Details -->
+    <div class="section-title">🧾 Payment Summary</div>
+    <div class="info-card">
+      <div class="info-card-header">
+        <span class="info-card-header-icon">✅</span>
+        <span class="info-card-header-label">Transaction Details</span>
+      </div>
+      <div class="info-row"><span class="info-label">Billing Month</span><span class="info-value">${month}</span></div>
+      <div class="info-row"><span class="info-label">Due Date</span><span class="info-value">${fmtDate(record.dueDate)}</span></div>
+      <div class="info-row"><span class="info-label">Monthly Rent</span><span class="info-value">${fmtINR(record.rentAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Amount Paid</span><span class="info-value" style="color:#276749;">${fmtINR(paymentAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Balance Remaining</span><span class="info-value">₹0 — Fully Paid</span></div>
+      <div class="info-row"><span class="info-label">Payment Date</span><span class="info-value">${fmtDate(new Date())}</span></div>
+      <div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#276749;font-weight:700;">✅ Paid</span></div>
+    </div>
+
+    ${buildTenantDetailsSection(tenant, accentColor)}
+    ${buildRoomAllocationSection(buildingDetails)}
+
+    <hr class="divider" />
+    <div class="note-box">
+      🏠 <strong>Keep this as your payment record.</strong> Please save or screenshot this email for your reference. 
+      Contact management if any discrepancy is noticed.
+    </div>`;
+
+  return {
+    subject: `✅ Rent Paid Successfully — ${month} | ${fmtINR(paymentAmount)}`,
+    html: emailWrapper({ accentColor, icon: "✅", title: "Rent Payment Confirmed", badgeLabel: "Paid in Full", bodyHtml })
+  };
 }
 
 function buildPartialPaymentEmail({ tenant, record, paymentAmount, buildingDetails }) {
   const remaining = record.rentAmount - record.paidAmount;
   const month = new Date(record.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" });
+  const accentColor = "#d97706";
+  const progressPct = Math.round((record.paidAmount / record.rentAmount) * 100);
+
+  // Progress bar
+  const progressBar = `
+    <div style="margin:16px 0 4px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#718096;margin-bottom:6px;">
+        <span>Payment Progress</span>
+        <span>${progressPct}% paid</span>
+      </div>
+      <div style="background:#e2e8f0;border-radius:50px;height:10px;overflow:hidden;">
+        <div style="background:linear-gradient(90deg,#276749,#48bb78);width:${progressPct}%;height:100%;border-radius:50px;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#a0aec0;margin-top:4px;">
+        <span>${fmtINR(record.paidAmount)} paid</span>
+        <span>${fmtINR(remaining)} remaining</span>
+      </div>
+    </div>`;
+
   const bodyHtml = `
-    <p class="greeting">Hello ${tenant.name},</p>
-    <p class="sub">We have received your partial rent payment for <strong>${month}</strong>. Remaining balance: ${fmtINR(remaining)}.</p>
-    <div class="amount-box"><div class="amount-label">Payment Received</div><div class="amount-value" style="color:#276749;">${fmtINR(paymentAmount)}</div></div>
-  `;
-  return { subject: `⏳ Partial Payment Received — ${fmtINR(remaining)} Still Due for ${month}`, html: emailWrapper({ accentColor: "#d97706", icon: "⏳", title: "Partial Payment Received", bodyHtml }) };
+    <p class="greeting">Hello, ${tenant.name}!</p>
+    <p class="sub-text">
+      We have received your partial rent payment of <strong style="color:#276749;">${fmtINR(paymentAmount)}</strong> for <strong>${month}</strong>.
+      The remaining balance of <strong style="color:#d97706;">${fmtINR(remaining)}</strong> is still outstanding. 
+      Please clear the balance before the due date.
+    </p>
+
+    <!-- Amount Box -->
+    <div class="amount-box">
+      <div class="amount-label">Balance Still Due</div>
+      <div class="amount-value">${fmtINR(remaining)}</div>
+      <div><span class="status-pill">⏳ Partially Paid</span></div>
+    </div>
+
+    <!-- Payment Details -->
+    <div class="section-title">🧾 Payment Breakdown</div>
+    <div class="info-card">
+      <div class="info-card-header">
+        <span class="info-card-header-icon">⏳</span>
+        <span class="info-card-header-label">Transaction Details</span>
+      </div>
+      <div class="info-row"><span class="info-label">Billing Month</span><span class="info-value">${month}</span></div>
+      <div class="info-row"><span class="info-label">Due Date</span><span class="info-value">${fmtDate(record.dueDate)}</span></div>
+      <div class="info-row"><span class="info-label">Monthly Rent</span><span class="info-value">${fmtINR(record.rentAmount)}</span></div>
+      <div class="info-row"><span class="info-label">This Payment</span><span class="info-value" style="color:#276749;">+ ${fmtINR(paymentAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Total Paid So Far</span><span class="info-value" style="color:#276749;">${fmtINR(record.paidAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Balance Remaining</span><span class="info-value accent">${fmtINR(remaining)}</span></div>
+      <div style="padding:14px 18px;">${progressBar}</div>
+    </div>
+
+    ${buildTenantDetailsSection(tenant, accentColor)}
+    ${buildRoomAllocationSection(buildingDetails)}
+
+    <hr class="divider" />
+    <div class="note-box">
+      ⏰ <strong>Action Required:</strong> Please pay the remaining <strong>${fmtINR(remaining)}</strong> before 
+      <strong>${fmtDate(record.dueDate)}</strong> to mark this month as fully settled and avoid any late fees.
+    </div>`;
+
+  return {
+    subject: `⏳ Partial Payment Received — ${fmtINR(remaining)} Still Due for ${month}`,
+    html: emailWrapper({ accentColor, icon: "⏳", title: "Partial Payment Received", badgeLabel: `${progressPct}% Paid`, bodyHtml })
+  };
 }
 
 // ── Time Constants ────────────────────────────────────────────────────────────
@@ -392,7 +716,9 @@ router.post("/pay", auth, async (req, res) => {
 
     if (tenant.email) {
       try {
-        const emailTemplate = record.status === "Paid" ? buildFullPaymentEmail({ tenant, record, paymentAmount: actualPay }) : buildPartialPaymentEmail({ tenant, record, paymentAmount: actualPay });
+        const emailTemplate = record.status === "Paid"
+          ? buildFullPaymentEmail({ tenant, record, paymentAmount: actualPay, buildingDetails: null })
+          : buildPartialPaymentEmail({ tenant, record, paymentAmount: actualPay, buildingDetails: null });
         await sendBrevoEmail(tenant.email, tenant.name, emailTemplate.subject, emailTemplate.html);
       } catch (e) { console.error("Email failed:", e.message); }
     }

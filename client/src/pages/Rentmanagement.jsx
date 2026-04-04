@@ -451,6 +451,23 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  // Document re-upload state
+  const [docFiles, setDocFiles] = useState({ aadharFront: null, aadharBack: null, passportPhoto: null });
+  const [docPreviews, setDocPreviews] = useState({ aadharFront: null, aadharBack: null, passportPhoto: null });
+
+  const handleDocFileChange = (field, file) => {
+    if (!file) return;
+    setDocFiles((prev) => ({ ...prev, [field]: file }));
+    const reader = new FileReader();
+    reader.onloadend = () => setDocPreviews((prev) => ({ ...prev, [field]: reader.result }));
+    reader.readAsDataURL(file);
+  };
+
+  const clearDocFile = (field) => {
+    setDocFiles((prev) => ({ ...prev, [field]: null }));
+    setDocPreviews((prev) => ({ ...prev, [field]: null }));
+  };
+
   // Vacate state
   const [showVacateConfirm, setShowVacateConfirm] = useState(false);
   const [vacating, setVacating] = useState(false);
@@ -486,19 +503,23 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   const handleSaveEdit = async () => {
     setSaving(true); setSaveError("");
     try {
+      const formData = new FormData();
+      formData.append("name", editForm.name);
+      formData.append("phone", editForm.phone);
+      formData.append("email", editForm.email || "");
+      formData.append("fatherName", editForm.fatherName || "");
+      formData.append("fatherPhone", editForm.fatherPhone || "");
+      formData.append("permanentAddress", editForm.permanentAddress);
+      formData.append("joiningDate", editForm.joiningDate);
+      formData.append("rentAmount", editForm.rentAmount);
+      if (docFiles.aadharFront)   formData.append("aadharFront",   docFiles.aadharFront);
+      if (docFiles.aadharBack)    formData.append("aadharBack",    docFiles.aadharBack);
+      if (docFiles.passportPhoto) formData.append("passportPhoto", docFiles.passportPhoto);
+
       const r = await fetch(`${API}/tenants/${tenantId}`, {
         method: "PUT",
-        headers: authHeader(),
-        body: JSON.stringify({
-          name: editForm.name,
-          phone: editForm.phone,
-          email: editForm.email,
-          fatherName: editForm.fatherName,
-          fatherPhone: editForm.fatherPhone,
-          permanentAddress: editForm.permanentAddress,
-          joiningDate: editForm.joiningDate,
-          rentAmount: Number(editForm.rentAmount),
-        }),
+        headers: { Authorization: `Bearer ${sessionStorage.getItem("token")}` },
+        body: formData,
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.message || "Failed to update tenant.");
@@ -516,6 +537,8 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
       setIsEditing(false);
       setEditRoomMode(false);
       setNewAllocation(null);
+      setDocFiles({ aadharFront: null, aadharBack: null, passportPhoto: null });
+      setDocPreviews({ aadharFront: null, aadharBack: null, passportPhoto: null });
       await load();
       if (onTenantUpdated) onTenantUpdated();
     } catch (e) {
@@ -579,7 +602,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
               )}
               {isEditing && (
                 <button
-                  onClick={() => { setIsEditing(false); setEditRoomMode(false); setNewAllocation(null); setSaveError(""); }}
+                  onClick={() => { setIsEditing(false); setEditRoomMode(false); setNewAllocation(null); setSaveError(""); setDocFiles({ aadharFront: null, aadharBack: null, passportPhoto: null }); setDocPreviews({ aadharFront: null, aadharBack: null, passportPhoto: null }); }}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-600 transition-colors"
                 >
                   ✕ Cancel
@@ -712,6 +735,75 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                           <label className="text-gray-500 text-[11px] uppercase tracking-wide">Father's Phone</label>
                           <input type="tel" value={editForm.fatherPhone} onChange={(e) => handleEditField("fatherPhone", e.target.value)} className={inputClass} placeholder="Father's phone" />
                         </div>
+                      </div>
+                    </div>
+
+                    {/* ── DOCUMENT RE-UPLOAD ── */}
+                    <div>
+                      <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold mb-2">Documents</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {[
+                          { field: "aadharFront",   label: "Aadhar Front",   icon: "🪪" },
+                          { field: "aadharBack",    label: "Aadhar Back",    icon: "🪪" },
+                          { field: "passportPhoto", label: "Passport Photo", icon: "📷" },
+                        ].map(({ field, label, icon }) => {
+                          const existingUrl = tenant?.documents?.[field];
+                          const previewUrl  = docPreviews[field];
+                          const hasNew      = !!docFiles[field];
+                          return (
+                            <div key={field} className="rounded-xl border border-gray-200 bg-gray-50 p-3 flex flex-col gap-2">
+                              <p className="text-gray-600 text-[11px] uppercase tracking-wide font-semibold flex items-center gap-1">{icon} {label}</p>
+
+                              {/* Preview area */}
+                              <div className="relative w-full h-20 rounded-lg overflow-hidden border border-gray-200 bg-white flex items-center justify-center">
+                                {previewUrl ? (
+                                  <>
+                                    <img src={previewUrl} alt={label} className="w-full h-full object-cover" />
+                                    <span className="absolute top-1 right-1 text-[9px] font-bold bg-amber-500 text-white px-1.5 py-0.5 rounded-full">NEW</span>
+                                  </>
+                                ) : existingUrl ? (
+                                  <img
+                                    src={existingUrl}
+                                    alt={label}
+                                    className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={() => handleViewDocument(existingUrl)}
+                                    title="Click to view"
+                                  />
+                                ) : (
+                                  <span className="text-gray-300 text-3xl">{icon}</span>
+                                )}
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex gap-1.5">
+                                <label className="flex-1 flex items-center justify-center gap-1 cursor-pointer text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors">
+                                  📁 {existingUrl || hasNew ? "Re-upload" : "Upload"}
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
+                                    className="hidden"
+                                    onChange={(e) => handleDocFileChange(field, e.target.files[0])}
+                                  />
+                                </label>
+                                {hasNew && (
+                                  <button
+                                    onClick={() => clearDocFile(field)}
+                                    className="px-2 py-1.5 rounded-lg bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200 text-[11px] font-semibold transition-colors"
+                                    title="Remove new file"
+                                  >✕</button>
+                                )}
+                                {existingUrl && !hasNew && (
+                                  <button
+                                    onClick={() => handleViewDocument(existingUrl)}
+                                    className="px-2 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100 text-[11px] font-semibold transition-colors"
+                                    title="View current"
+                                  >👁</button>
+                                )}
+                              </div>
+                              {hasNew && <p className="text-[10px] text-amber-600 font-medium truncate">📎 {docFiles[field].name}</p>}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
