@@ -96,34 +96,76 @@ export default function AddCandidate() {
     }
   };
 
-  const validateStep1 = () => {
-    const { name, phone, permanentAddress, joiningDate, rentAmount } = form;
-    if (!name.trim()) {
-      Swal.fire("Validation Error", "Please enter tenant's full name", "warning");
-      return false;
-    }
-    if (!phone.trim()) {
-      Swal.fire("Validation Error", "Please enter phone number", "warning");
-      return false;
-    }
-    if (phone.trim().length < 10) {
-      Swal.fire("Validation Error", "Please enter a valid 10-digit phone number", "warning");
-      return false;
-    }
-    if (!permanentAddress.trim()) {
-      Swal.fire("Validation Error", "Please enter permanent address", "warning");
-      return false;
-    }
-    if (!joiningDate) {
-      Swal.fire("Validation Error", "Please select joining date", "warning");
-      return false;
-    }
-    if (!rentAmount || Number(rentAmount) <= 0) {
-      Swal.fire("Validation Error", "Please enter a valid rent amount", "warning");
-      return false;
-    }
-    return true;
-  };
+const validateStep1 = () => {
+  const { name, phone, permanentAddress, joiningDate, rentAmount, fatherName, fatherPhone, email } = form;
+
+  if (!name.trim()) {
+    Swal.fire("Validation Error", "Please enter tenant's full name", "warning");
+    return false;
+  }
+
+  if (!phone.trim()) {
+    Swal.fire("Validation Error", "Please enter phone number", "warning");
+    return false;
+  }
+  // ✅ Email Required
+if (!form.email) {
+  Swal.fire("Validation Error", "Please enter email", "warning");
+  return false;
+}
+
+// ✅ Email format check
+if (form.emailError) {
+  Swal.fire("Validation Error", form.emailError, "warning");
+  return false;
+}
+
+  if (error) {
+    Swal.fire("Validation Error", error, "warning");
+    return false;
+  }
+
+  // ✅ Father Name Required
+  if (!fatherName.trim()) {
+    Swal.fire("Validation Error", "Please enter father's name", "warning");
+    return false;
+  }
+
+  // ✅ Father Phone Required
+  if (!fatherPhone.trim()) {
+    Swal.fire("Validation Error", "Please enter father's phone number", "warning");
+    return false;
+  }
+
+  // ✅ Check father phone inline error
+  if (fatherPhoneError) {
+    Swal.fire("Validation Error", fatherPhoneError, "warning");
+    return false;
+  }
+
+  // ✅ Email validation (optional but if entered must be valid)
+  if (email && form.emailError) {
+    Swal.fire("Validation Error", form.emailError, "warning");
+    return false;
+  }
+
+  if (!permanentAddress.trim()) {
+    Swal.fire("Validation Error", "Please enter permanent address", "warning");
+    return false;
+  }
+
+  if (!joiningDate) {
+    Swal.fire("Validation Error", "Please select joining date", "warning");
+    return false;
+  }
+
+  if (!rentAmount || Number(rentAmount) <= 0) {
+    Swal.fire("Validation Error", "Please enter a valid rent amount", "warning");
+    return false;
+  }
+
+  return true;
+};
 
   const validateDocuments = () => {
     if (!aadharFront) {
@@ -409,30 +451,30 @@ export default function AddCandidate() {
             </div>
             
 <div>
-  <label style={lblStyle}>Email</label>
+  <label style={lblStyle}>Email*</label>
 
-  <input
-    style={{
-      ...inputStyle,
-      borderColor: form.emailError ? "red" : "#ccc"
-    }}
-    value={form.email}
-    onChange={(e) => {
-      let value = e.target.value;
+<input
+  style={{
+    ...inputStyle,
+    borderColor: form.emailError ? "red" : "#ccc"
+  }}
+  value={form.email}
+  onChange={(e) => {
+    let value = e.target.value;
 
-      setForm({
-        ...form,
-        email: value,
-        emailError:
-          value.length === 0
-            ? ""
-            : !value.includes("@")
-            ? "Please enter a valid email address"
-            : ""
-      });
-    }}
-    placeholder="john@email.com"
-  />
+    setForm({
+      ...form,
+      email: value,
+      emailError:
+        value === ""
+          ? "Email is required"   // ✅ now required
+          : !value.includes("@")
+          ? "Please enter a valid email address"
+          : ""
+    });
+  }}
+  placeholder="john@email.com"
+/>
 
   {form.emailError && (
     <span style={{ color: "red", fontSize: "12px" }}>
@@ -447,7 +489,7 @@ export default function AddCandidate() {
               gap: "clamp(16px, 4vw, 20px)" 
             }}>
               <div>
-                <label style={lblStyle}>Father's Name</label>
+                <label style={lblStyle}>Father's Name*</label>
                 <input 
                   style={inputStyle} 
                   value={form.fatherName} 
@@ -456,7 +498,7 @@ export default function AddCandidate() {
                 />
               </div>
             <div>
-  <label style={lblStyle}>Father's Phone</label>
+  <label style={lblStyle}>Father's Phone*</label>
 
   <input
     style={{

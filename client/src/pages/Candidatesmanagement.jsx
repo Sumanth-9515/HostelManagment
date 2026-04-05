@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useLocation } from "react-router-dom";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -900,6 +901,8 @@ function ArrearCell({ rentInfo }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function CandidatesManagement() {
+  const location = useLocation();
+
   const [tenants, setTenants]           = useState([]);
   const [rentMap, setRentMap]           = useState(new Map()); // tenantId → rentSummary
   const [loading, setLoading]           = useState(true);
@@ -938,6 +941,21 @@ export default function CandidatesManagement() {
   }, []);
 
   useEffect(() => { loadTenants(); }, [loadTenants, refreshKey]);
+
+  // ── Auto-filter when navigated from notification with a candidate name ────
+  // Runs after tenants are loaded — filters directly from the loaded list
+  useEffect(() => {
+    const candidateName = location.state?.candidateName;
+    if (candidateName && tenants.length > 0) {
+      setSearchType("name");
+      setSearchQuery(candidateName);
+      const filtered = tenants.filter((t) =>
+        t.name?.toLowerCase().includes(candidateName.toLowerCase())
+      );
+      setSearchResults(filtered);
+      setHasSearched(true);
+    }
+  }, [tenants, location.state]);
 
   const getRentInfo = (tenantId) => rentMap.get(tenantId?.toString()) || null;
 

@@ -26,7 +26,6 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 // ── Cloudinary setup ──────────────────────────────────────────────────────────
-// Trim whitespace from env vars to avoid invisible-character issues
 const CLD_CLOUD = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
 const CLD_KEY   = (process.env.CLOUDINARY_API_KEY    || "").trim();
 const CLD_SEC   = (process.env.CLOUDINARY_API_SECRET || "").trim();
@@ -61,8 +60,6 @@ const diskStorage = multer.diskStorage({
 });
 
 // ── Multer instance ───────────────────────────────────────────────────────────
-// When Cloudinary is ready  → memoryStorage (upload_stream needs a Buffer)
-// When Cloudinary is absent → diskStorage  (write directly to disk)
 const upload = multer({
   storage: CLOUDINARY_READY ? multer.memoryStorage() : diskStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -83,17 +80,6 @@ const uploadToCloudinary = (buffer, folder) =>
   });
 
 // ── Document URL resolver ─────────────────────────────────────────────────────
-// Returns { aadharFront, aadharBack, passportPhoto }
-//   Cloudinary → stores full https://res.cloudinary.com/... URL  ✅
-//   Disk       → stores full https://<BACKEND_URL>/uploads/...   ✅
-//                (BACKEND_URL from env, e.g. https://your-api.onrender.com)
-//
-// THIS IS THE KEY FIX:
-//   Previously the disk path was stored as a bare relative path like
-//   "/uploads/tenant-docs/file.jpg" which looks like a local filesystem path
-//   in the DB.  Now we always store an absolute URL — either a Cloudinary
-//   https:// URL or a full backend https:// URL — so the DB always has a
-//   real, clickable link regardless of which storage backend is used.
 const resolveDocUrls = async (files) => {
   const docs = { aadharFront: null, aadharBack: null, passportPhoto: null };
   if (!files) return docs;
@@ -102,29 +88,22 @@ const resolveDocUrls = async (files) => {
     if (!fileArr || !fileArr[0]) return null;
     const f = fileArr[0];
 
-    // ── Cloudinary path ──────────────────────────────────────────────────────
     if (CLOUDINARY_READY) {
       try {
         const url = await uploadToCloudinary(f.buffer, folder);
-        // console.log(`  ✅ Cloudinary upload OK → ${url}`);
-        return url;                // e.g. https://res.cloudinary.com/demo/image/upload/...
+        return url;
       } catch (err) {
         console.error(`  ❌ Cloudinary upload FAILED for "${folder}":`, err.message);
-        // Do NOT silently return null — surface the error so the caller knows
         throw new Error(`Cloudinary upload failed: ${err.message}`);
       }
     }
 
-    // ── Disk fallback path ───────────────────────────────────────────────────
-    // f.filename is set by multer diskStorage
-    // Store a FULL URL (not a bare relative path) so the DB holds a real link.
     const backendBase = (process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, "");
     const fullUrl = `${backendBase}/uploads/tenant-docs/${f.filename}`;
     console.log(`  💾 Disk upload OK → ${fullUrl}`);
     return fullUrl;
   };
 
-  // console.log("📎 Processing document uploads:", Object.keys(files));
   docs.aadharFront   = await resolveOne(files.aadharFront,   "tenant_documents/aadhar");
   docs.aadharBack    = await resolveOne(files.aadharBack,    "tenant_documents/aadhar");
   docs.passportPhoto = await resolveOne(files.passportPhoto, "tenant_documents/passport");
@@ -292,6 +271,7 @@ router.post(
           documents,
           buildingId, floorId, roomId, bedId, allocationInfo,
           source: "onboarding-link",
+          isVerified: false, // new candidate — unread notification
         });
         await tenant.save();
 
@@ -319,6 +299,7 @@ router.post(
         advanceAmount: advance,
         documents,
         source: "onboarding-link",
+        isVerified: false, // new candidate — unread notification
       });
       await tenant.save();
 
@@ -336,6 +317,40 @@ router.post(
 // ══════════════════════════════════════════════════════════════════════════════
 // PROTECTED ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /tenants/notifications ────────────────────────────────────────────────
+// Returns ALL onboarding-link candidates with their isVerified status.
+// Unverified ones drive the notification badge count.
+router.get("/notifications", auth, async (req, res) => {
+  try {
+    const tenants = await Tenant.find({
+      owner: req.user.id,
+      source: "onboarding-link",
+    })
+      .select("name phone email joiningDate rentAmount allocationInfo isVerified createdAt documents")
+      .sort({ createdAt: -1 })
+      .limit(30); // show latest 30 in dropdown
+
+    res.json(tenants);
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
+// ── PATCH /tenants/mark-verified ─────────────────────────────────────────────
+// Called when admin opens the notification dropdown.
+// Marks ALL unverified onboarding-link candidates as isVerified = true.
+router.patch("/mark-verified", auth, async (req, res) => {
+  try {
+    const result = await Tenant.updateMany(
+      { owner: req.user.id, source: "onboarding-link", isVerified: false },
+      { $set: { isVerified: true } }
+    );
+    res.json({ message: "Marked as verified.", modifiedCount: result.modifiedCount });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
 
 // Add tenant — admin (AddCandidate form)
 router.post(

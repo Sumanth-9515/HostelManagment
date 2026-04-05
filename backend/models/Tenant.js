@@ -33,6 +33,10 @@ const TenantSchema = new mongoose.Schema(
       enum: ["admin", "onboarding-link"],
       default: "admin",
     },
+    // ── NEW: Notification read flag for onboarding-link candidates ──
+    // false = admin has NOT yet seen this candidate in the notification panel
+    // true  = admin has opened the notification dropdown and this entry was marked read
+    isVerified: { type: Boolean, default: false },
     status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
   },
   { timestamps: true }

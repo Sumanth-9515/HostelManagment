@@ -252,10 +252,10 @@ const validate1 = () => {
     errors.phone = "Phone must start with 6-9 and be 10 digits";
   }
 
-  // ✅ Email (must contain @ and valid format)
-  if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-    errors.email = "Enter valid email";
-  }
+// ✅ Email (REQUIRED + valid format)
+if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+  errors.email = "Email is required and must be valid";
+}
 
   // ✅ Father Name (same as name)
   if (!/^[A-Za-z ]{3,}$/.test(form.fatherName.trim())) {
@@ -514,8 +514,8 @@ const set = k => e => {
               </TwoCol>
 
               <TwoCol>
-                <Field label="Email Address">
-                  <FocusInput type="email" placeholder="you@email.com" value={form.email} onChange={set("email")} />
+                <Field label="Email Address*">
+                  <FocusInput type="email" placeholder="you@email.com" value={form.email} onChange={set("email")} required />
                   {fieldErrors.email && (
   <span style={{ color: "red", fontSize: 11 }}>
     {fieldErrors.email}
