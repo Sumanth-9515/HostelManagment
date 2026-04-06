@@ -154,7 +154,7 @@ export default function MasterOwners() {
         <div className="mo-header">
           <div>
             <h1>👥 All Owners</h1>
-            <p>Every registered hostel owner on Nilayam Hostel Management<</p>
+            <p>Every registered hostel owner on Nilayam Hostel Managements</p>
           </div>
           <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
             <div className="mo-nav">
