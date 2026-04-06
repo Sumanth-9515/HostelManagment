@@ -91,7 +91,7 @@ function FormActions({ onCancel, onSubmit, submitLabel }) {
 function BedTenantModal({ tenant, onClose }) {
   if (!tenant) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div className="relative w-full max-w-md max-h-[80vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
           <h2 className="text-gray-900 font-bold text-lg">Tenant Details</h2>
@@ -578,18 +578,18 @@ export default function AddHostel() {
     setSelectedFloor(null);
     setSelectedRoom(null);
     setStats(computeStats(buildings, building));
-    setPopupStack([{ type: "floors", building }]);
+    setPopupStack([{ type: "floors" }]);
   };
 
   const handleFloorSelect = (floor) => {
     setSelectedFloor(floor);
     setSelectedRoom(null);
-    setPopupStack([{ type: "rooms", floor, building: selectedBuilding }]);
+    setPopupStack(prev => [...prev, { type: "rooms" }]);
   };
 
   const handleRoomSelect = (room) => {
     setSelectedRoom(room);
-    setPopupStack([{ type: "beds", room }]);
+    setPopupStack(prev => [...prev, { type: "beds" }]);
   };
 
   const handleBedSelect = async (bed) => {
@@ -597,53 +597,49 @@ export default function AddHostel() {
       try {
         const r = await fetch(`${API}/tenants/${bed.tenantId}`, { headers: authHeaders() });
         const tenant = await r.json();
-        if (r.ok) { setSelectedTenant(tenant); setPopupStack([]); }
+        if (r.ok) { 
+          setSelectedTenant(tenant); 
+          // Removed `setPopupStack([])` so the current stack remains intact behind tenant details
+        }
       } catch (error) { console.error("Error fetching tenant:", error); }
     }
   };
 
-  const closePopup = () => setPopupStack([]);
+  // Gracefully step back through the modal stack instead of immediately clearing it
+  const closePopup = () => setPopupStack(prev => prev.slice(0, -1));
 
-  // ── Helper: refresh and re-open floors popup ──
+  // ── Helper: refresh state automatically without glitching the popups ──
   const refreshAndReopenFloors = async () => {
     const updated = await fetchBuildings();
     const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
     if (freshBuilding) {
       setSelectedBuilding(freshBuilding);
-      setPopupStack([]);
-      setTimeout(() => setPopupStack([{ type: "floors", building: freshBuilding }]), 100);
     }
   };
 
-  // ── Helper: refresh and re-open rooms popup ──
   const refreshAndReopenRooms = async () => {
     const updated = await fetchBuildings();
     const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
     if (freshBuilding) {
-      const freshFloor = freshBuilding.floors.find((f) => f._id === selectedFloor._id);
       setSelectedBuilding(freshBuilding);
+      const freshFloor = freshBuilding.floors.find((f) => f._id === selectedFloor._id);
       if (freshFloor) {
         setSelectedFloor(freshFloor);
-        setPopupStack([]);
-        setTimeout(() => setPopupStack([{ type: "rooms", floor: freshFloor, building: freshBuilding }]), 100);
       }
     }
   };
 
-  // ── Helper: refresh and re-open beds popup ──
   const refreshAndReopenBeds = async () => {
     const updated = await fetchBuildings();
     const freshBuilding = updated?.find((b) => b._id === selectedBuilding._id);
     if (freshBuilding) {
+      setSelectedBuilding(freshBuilding);
       const freshFloor = freshBuilding.floors.find((f) => f._id === selectedFloor._id);
       if (freshFloor) {
-        const freshRoom = freshFloor.rooms.find((r) => r._id === selectedRoom._id);
-        setSelectedBuilding(freshBuilding);
         setSelectedFloor(freshFloor);
+        const freshRoom = freshFloor.rooms.find((r) => r._id === selectedRoom._id);
         if (freshRoom) {
           setSelectedRoom(freshRoom);
-          setPopupStack([]);
-          setTimeout(() => setPopupStack([{ type: "beds", room: freshRoom }]), 100);
         }
       }
     }
@@ -669,6 +665,7 @@ export default function AddHostel() {
     show("Building deleted");
     if (selectedBuilding?._id === id) {
       setSelectedBuilding(null); setSelectedFloor(null); setSelectedRoom(null);
+      setPopupStack([]);
     }
     fetchBuildings();
   };
@@ -679,13 +676,11 @@ export default function AddHostel() {
 
     let r;
     if (editFloor) {
-      // Edit existing floor
       r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${editFloor._id}`, {
         method: "PUT", headers: authHeaders(),
         body: JSON.stringify({ floorNumber: Number(fForm.floorNumber), floorName: fForm.floorName }),
       });
     } else {
-      // Add new floor
       r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors`, {
         method: "POST", headers: authHeaders(),
         body: JSON.stringify({ floorNumber: Number(fForm.floorNumber), floorName: fForm.floorName }),
@@ -716,13 +711,11 @@ export default function AddHostel() {
 
     let r;
     if (editRoom) {
-      // Edit existing room
       r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms/${editRoom._id}`, {
         method: "PUT", headers: authHeaders(),
         body: JSON.stringify({ roomNumber: rForm.roomNumber, shareType: Number(rForm.shareType) }),
       });
     } else {
-      // Add new room
       r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms`, {
         method: "POST", headers: authHeaders(),
         body: JSON.stringify({ roomNumber: rForm.roomNumber, shareType: Number(rForm.shareType) }),
@@ -999,7 +992,7 @@ export default function AddHostel() {
       )}
 
       {/* ── Popup Stack ── */}
-      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "floors" && (
+      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "floors" && selectedBuilding && (
         <FloorModal
           building={selectedBuilding}
           floors={selectedBuilding?.floors || []}
@@ -1014,7 +1007,7 @@ export default function AddHostel() {
           onClose={closePopup}
         />
       )}
-      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "rooms" && (
+      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "rooms" && selectedFloor && (
         <RoomModal
           floor={selectedFloor}
           rooms={selectedFloor?.rooms || []}
@@ -1029,7 +1022,7 @@ export default function AddHostel() {
           onClose={closePopup}
         />
       )}
-      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "beds" && (
+      {popupStack.length > 0 && popupStack[popupStack.length - 1].type === "beds" && selectedRoom && (
         <BedDetailsModal
           room={selectedRoom}
           onSelectBed={handleBedSelect}
