@@ -134,7 +134,7 @@ export default function LoginPage() {
       <div className="lp-root">
         <div className="lp-left">
           <div className="lp-left-blob1" /><div className="lp-left-blob2" />
-          <div className="lp-brand"><div className="lp-brand-icon">🏨</div><span className="lp-brand-name">HOSTELIQ</span></div>
+          <div className="lp-brand"><div className="lp-brand-icon">🏨</div><span className="lp-brand-name">Nilayam Hostel Management</span></div>
           <div className="lp-left-mid"><h2>Manage your hostel smarter</h2><p>Everything you need to run your property — rooms, tenants, payments — in one place.</p></div>
           <div className="lp-features">
             {["Room & bed management","Tenant onboarding & KYC","Rent tracking & receipts","Multi-property support"].map(f => (
@@ -145,7 +145,7 @@ export default function LoginPage() {
 
         <div className="lp-right">
           <div className={`lp-card ${mounted ? "in" : ""}`}>
-            <div className="lp-mob-brand"><div className="lp-mob-brand-icon">🏨</div><span className="lp-mob-brand-name">HOSTELIQ</span></div>
+            <div className="lp-mob-brand"><div className="lp-mob-brand-icon">🏨</div><span className="lp-mob-brand-name">Nilayam Hostel Management</span></div>
             <div className="lp-hd"><h1>Welcome back 👋</h1><p>Sign in to your account to continue</p></div>
 
             <form className="lp-form" onSubmit={handleLogin}>
@@ -193,10 +193,10 @@ export default function LoginPage() {
                   <div className="lp-blocked-body">
                     Your account login has been stopped by the website owner.
                     You cannot access your dashboard at this time.
-                    Please contact the HOSTELIQ support team to have your access restored.
+                    Please contact the Nilayam Hostel Management support team to have your access restored.
                   </div>
-                  <a href="mailto:support@hosteliq.com" className="lp-blocked-contact">
-                    📧 Contact HOSTELIQ Support
+                  <a href="mailto:nilayamhostelmanagment@gmail.com" className="lp-blocked-contact">
+                    📧 Contact Nilayam Hostel Management Support
                   </a>
                 </div>
               )}

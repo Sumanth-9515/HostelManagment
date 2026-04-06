@@ -63,7 +63,7 @@ export default function MasterLayout({ children }) {
             <Icons.Menu />
           </button>
           <div style={{ marginLeft: "16px", fontSize: 14, fontWeight: 700, letterSpacing: "0.05em" }}>
-            HOSTELIQ
+            Nilayam Hostel Management
           </div>
         </header>
       )}
@@ -93,7 +93,7 @@ export default function MasterLayout({ children }) {
         }}>
           {(isOpen || isMobile) && (
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.08em" }}>HOSTELIQ</div>
+              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.08em" }}>Nilayam Hostel Management</div>
               <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase" }}>Master Admin</div>
             </div>
           )}

@@ -19,7 +19,7 @@ export default function TenantHeader({ title = "", subtitle = "", step = null, t
         {/* ── Brand ─────────────────────────────────────────────────────── */}
         <button onClick={() => navigate("/")} style={styles.brand}>
           <span style={styles.brandDot} />
-          <span style={styles.brandName}>HOSTELIQ</span>
+          <span style={styles.brandName}>Nilayam Hostel Management</span>
         </button>
 
         {/* ── Page title (centre) ────────────────────────────────────────── */}

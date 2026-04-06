@@ -729,7 +729,7 @@ const set = k => e => {
         </div>
 
         <p style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", marginTop: 16 }}>
-          Secured by HOSTELIQ — your data is encrypted and safe.
+          Secured by Nilayam Hostel Management — your data is encrypted and safe.
         </p>
       </div>
     </div>

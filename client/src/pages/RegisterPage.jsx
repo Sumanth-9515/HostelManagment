@@ -315,7 +315,7 @@ export default function RegisterPage() {
           <div className="rp-blob1" /><div className="rp-blob2" />
           <div className="rp-brand">
             <div className="rp-brand-icon">🏨</div>
-            <span className="rp-brand-name">HOSTELIQ</span>
+            <span className="rp-brand-name">Nilayam Hostel Management </span>
           </div>
           <div className="rp-left-mid">
             <h2>Get started in minutes</h2>
@@ -341,7 +341,7 @@ export default function RegisterPage() {
 
             <div className="rp-mob-brand">
               <div className="rp-mob-brand-icon">🏨</div>
-              <span className="rp-mob-brand-name">HOSTELIQ</span>
+              <span className="rp-mob-brand-name">Nilayam Hostel Management</span>
             </div>
 
             {/* Progress bar */}

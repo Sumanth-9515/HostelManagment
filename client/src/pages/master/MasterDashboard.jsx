@@ -118,7 +118,7 @@ export default function MasterDashboard() {
         <div className="md-header">
           <div>
             <h1>🏢 Master Dashboard</h1>
-            <p>Platform-wide overview — HOSTELIQ admin panel</p>
+            <p>Platform-wide overview — Nilayam Hostel Management admin panel</p>
           </div>
           <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
             <div className="md-nav">

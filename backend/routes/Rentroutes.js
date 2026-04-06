@@ -586,7 +586,7 @@ async function sendBrevoEmail(toEmail, toName, subject, htmlContent) {
   if (!apiKey) throw new Error("BREVO_API_KEY is not set in environment variables.");
   if (!senderEmail) throw new Error("BREVO_SENDER_EMAIL is not set in environment variables.");
   const payload = {
-    sender: { name: (process.env.BREVO_SENDER_NAME || "Nivas Hostel Manager").trim(), email: senderEmail },
+    sender: { name: (process.env.BREVO_SENDER_NAME || "Nilayam Hostel Manager").trim(), email: senderEmail },
     to: [{ email: toEmail, name: toName }],
     subject,
     htmlContent,

@@ -466,7 +466,7 @@ export default function Layout({ children }) {
           </button>
 
           <div style={{ marginLeft: 16, fontWeight: 700, fontSize: 14, letterSpacing: "0.05em", flex: 1 }}>
-            HOSTELIQ
+            Nilayam
           </div>
 
           {/* Bell — right of mobile navbar */}
