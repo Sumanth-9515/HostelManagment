@@ -2,6 +2,7 @@ import express from "express";
 import Building from "../models/Building.js";
 import Tenant from "../models/Tenant.js";
 import jwt from "jsonwebtoken";
+import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
 
@@ -16,8 +17,7 @@ const auth = (req, res, next) => {
   }
 };
 
-const makeBeds = (shareType) =>
-  Array.from({ length: shareType }, (_, i) => ({ bedNumber: i + 1 }));
+const makeBeds = (shareType) => Array.from({ length: shareType }, (_, i) => ({ bedNumber: i + 1 }));
 
 // 1. CREATE BUILDING
 router.post("/", auth, async (req, res) => {
@@ -26,6 +26,8 @@ router.post("/", auth, async (req, res) => {
     if (!buildingName) return res.status(400).json({ message: "Building name is required." });
     const building = new Building({ owner: req.user.id, buildingName, address, floors: [] });
     await building.save();
+    
+    await logActivity(req.user.id, "CREATE", "Building", `Created new building: ${buildingName}`);
     res.status(201).json({ message: "Building created.", building });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
@@ -42,8 +44,9 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// 3. OVERVIEW STATS — must come before /:buildingId
+// 3. OVERVIEW STATS
 router.get("/stats/overview", auth, async (req, res) => {
+  // ... (Your exact existing code, no logging needed for GET requests)
   try {
     const buildings = await Building.find({ owner: req.user.id });
     const tenants = await Tenant.find({ owner: req.user.id, status: "Active", buildingId: { $ne: null } });
@@ -73,36 +76,24 @@ router.get("/stats/overview", auth, async (req, res) => {
       }
 
       return {
-        buildingId: b._id,
-        buildingName: b.buildingName,
-        address: b.address,
-        totalFloors,
-        totalRooms,
-        totalBeds,
-        occupiedBeds,
-        availableBeds: totalBeds - occupiedBeds,
-        roomsFilled,
-        roomsAvailable,
-        totalTenants: buildingTenants.length,
-        totalRevenue,
+        buildingId: b._id, buildingName: b.buildingName, address: b.address,
+        totalFloors, totalRooms, totalBeds, occupiedBeds,
+        availableBeds: totalBeds - occupiedBeds, roomsFilled, roomsAvailable,
+        totalTenants: buildingTenants.length, totalRevenue,
       };
     });
-
     res.json(stats);
-  } catch (err) {
-    res.status(500).json({ message: "Server error.", error: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error.", error: err.message }); }
 });
 
-// 4. SEARCH ROOM — must come before /:buildingId
+// 4. SEARCH ROOM
 router.get("/search/room", auth, async (req, res) => {
+  // ... (Your exact existing code, no logging needed here)
   try {
     const { roomNumber } = req.query;
     if (!roomNumber) return res.status(400).json({ message: "roomNumber query param required." });
-
     const buildings = await Building.find({ owner: req.user.id });
     const results = [];
-
     for (const building of buildings) {
       for (const floor of building.floors) {
         for (const room of floor.rooms) {
@@ -111,43 +102,30 @@ router.get("/search/room", auth, async (req, res) => {
               room.beds.map(async (bed) => {
                 let tenantInfo = null;
                 if (bed.tenantId) {
-                  tenantInfo = await Tenant.findById(bed.tenantId).select(
-                    "name phone email joiningDate rentAmount permanentAddress"
-                  );
+                  tenantInfo = await Tenant.findById(bed.tenantId).select("name phone email joiningDate rentAmount permanentAddress");
                 }
                 return { ...bed.toObject(), tenant: tenantInfo };
               })
             );
             results.push({
-              buildingId: building._id,
-              buildingName: building.buildingName,
-              floorId: floor._id,
-              floorNumber: floor.floorNumber,
-              floorName: floor.floorName,
-              roomId: room._id,
-              roomNumber: room.roomNumber,
-              shareType: room.shareType,
-              beds: bedsWithTenants,
+              buildingId: building._id, buildingName: building.buildingName,
+              floorId: floor._id, floorNumber: floor.floorNumber, floorName: floor.floorName,
+              roomId: room._id, roomNumber: room.roomNumber, shareType: room.shareType, beds: bedsWithTenants,
             });
           }
         }
       }
     }
-
     if (!results.length) return res.status(404).json({ message: `No room found with number "${roomNumber}".` });
     res.json(results);
-  } catch (err) {
-    res.status(500).json({ message: "Server error.", error: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error.", error: err.message }); }
 });
 
 // 5. GET SINGLE BUILDING
 router.get("/:buildingId", auth, async (req, res) => {
   try {
     const building = await Building.findOne({ _id: req.params.buildingId, owner: req.user.id }).populate({
-      path: "floors.rooms.beds.tenantId",
-      model: "Tenant",
-      select: "name phone email joiningDate rentAmount",
+      path: "floors.rooms.beds.tenantId", model: "Tenant", select: "name phone email joiningDate rentAmount",
     });
     if (!building) return res.status(404).json({ message: "Building not found." });
     res.json(building);
@@ -160,12 +138,26 @@ router.get("/:buildingId", auth, async (req, res) => {
 router.put("/:buildingId", auth, async (req, res) => {
   try {
     const { buildingName, address } = req.body;
-    const building = await Building.findOneAndUpdate(
-      { _id: req.params.buildingId, owner: req.user.id },
-      { buildingName, address },
-      { new: true }
-    );
+    const building = await Building.findOne({ _id: req.params.buildingId, owner: req.user.id });
     if (!building) return res.status(404).json({ message: "Building not found." });
+
+    let details = [];
+    if (buildingName && buildingName !== building.buildingName) {
+      details.push(`Name: ${building.buildingName} ➔ ${buildingName}`);
+      building.buildingName = buildingName;
+    }
+    if (address && address !== building.address) {
+      details.push(`Address updated`);
+      building.address = address;
+    }
+
+    await building.save();
+    
+    const desc = details.length > 0 
+      ? `Updated Building: ${details.join(" | ")}` 
+      : `Updated Building: ${building.buildingName} (No changes made)`;
+
+    await logActivity(req.user.id, "UPDATE", "Building", desc);
     res.json({ message: "Building updated.", building });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
@@ -181,6 +173,8 @@ router.delete("/:buildingId", auth, async (req, res) => {
       { buildingId: building._id },
       { buildingId: null, floorId: null, roomId: null, bedId: null, allocationInfo: {} }
     );
+    
+    await logActivity(req.user.id, "DELETE", "Building", `Deleted building: ${building.buildingName}`);
     res.json({ message: "Building deleted." });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
@@ -196,6 +190,8 @@ router.post("/:buildingId/floors", auth, async (req, res) => {
     if (!building) return res.status(404).json({ message: "Building not found." });
     building.floors.push({ floorNumber, floorName, rooms: [] });
     await building.save();
+    
+    await logActivity(req.user.id, "CREATE", "Floor", `Added Floor ${floorNumber} to building ${building.buildingName}`);
     res.status(201).json({ message: "Floor added.", building });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
@@ -213,13 +209,15 @@ router.post("/:buildingId/floors/:floorId/rooms", auth, async (req, res) => {
     if (!floor) return res.status(404).json({ message: "Floor not found." });
     floor.rooms.push({ roomNumber, shareType: Number(shareType), beds: makeBeds(Number(shareType)) });
     await building.save();
+    
+    await logActivity(req.user.id, "CREATE", "Room", `Added Room ${roomNumber} (Share: ${shareType}) to ${building.buildingName}`);
     res.status(201).json({ message: "Room added.", building });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
   }
 });
 
-// 10. AVAILABLE BEDS
+// 10. AVAILABLE BEDS (Get request - no log)
 router.get("/:buildingId/floors/:floorId/rooms/:roomId/available-beds", auth, async (req, res) => {
   try {
     const building = await Building.findOne({ _id: req.params.buildingId, owner: req.user.id });
@@ -240,13 +238,33 @@ router.put("/:buildingId/floors/:floorId", auth, async (req, res) => {
   try {
     const { floorNumber, floorName } = req.body;
     if (floorNumber === undefined) return res.status(400).json({ message: "floorNumber is required." });
+    
     const building = await Building.findOne({ _id: req.params.buildingId, owner: req.user.id });
     if (!building) return res.status(404).json({ message: "Building not found." });
+    
     const floor = building.floors.id(req.params.floorId);
     if (!floor) return res.status(404).json({ message: "Floor not found." });
-    floor.floorNumber = Number(floorNumber);
-    floor.floorName = floorName ?? floor.floorName;
+
+    const oldFloorNum = floor.floorNumber;
+    const oldFloorName = floor.floorName || "None";
+    let details = [];
+
+    if (Number(floorNumber) !== oldFloorNum) {
+      details.push(`Floor No: ${oldFloorNum} ➔ ${floorNumber}`);
+      floor.floorNumber = Number(floorNumber);
+    }
+    if (floorName !== undefined && floorName !== floor.floorName) {
+      details.push(`Name: ${oldFloorName} ➔ ${floorName || "None"}`);
+      floor.floorName = floorName;
+    }
+
     await building.save();
+    
+    const desc = details.length > 0
+      ? `Updated Floor in ${building.buildingName}: ${details.join(" | ")}`
+      : `Updated Floor ${floor.floorNumber} in ${building.buildingName} (No changes made)`;
+
+    await logActivity(req.user.id, "UPDATE", "Floor", desc);
     res.json({ message: "Floor updated.", building });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
@@ -260,62 +278,83 @@ router.delete("/:buildingId/floors/:floorId", auth, async (req, res) => {
     if (!building) return res.status(404).json({ message: "Building not found." });
     const floor = building.floors.id(req.params.floorId);
     if (!floor) return res.status(404).json({ message: "Floor not found." });
-    // Vacate all tenants in this floor's rooms
     const roomIds = floor.rooms.map((r) => r._id);
     await Tenant.updateMany(
       { roomId: { $in: roomIds } },
       { buildingId: null, floorId: null, roomId: null, bedId: null, allocationInfo: {} }
     );
+    const fn = floor.floorNumber;
     floor.deleteOne();
     await building.save();
+    
+    await logActivity(req.user.id, "DELETE", "Floor", `Deleted Floor ${fn} from ${building.buildingName}`);
     res.json({ message: "Floor deleted.", building });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
   }
 });
 
-// 13. UPDATE ROOM (roomNumber, shareType — adjusts beds automatically)
+// 13. UPDATE ROOM
 router.put("/:buildingId/floors/:floorId/rooms/:roomId", auth, async (req, res) => {
   try {
     const { roomNumber, shareType } = req.body;
     const building = await Building.findOne({ _id: req.params.buildingId, owner: req.user.id });
     if (!building) return res.status(404).json({ message: "Building not found." });
+    
     const floor = building.floors.id(req.params.floorId);
     if (!floor) return res.status(404).json({ message: "Floor not found." });
+    
     const room = floor.rooms.id(req.params.roomId);
     if (!room) return res.status(404).json({ message: "Room not found." });
 
-    if (roomNumber) room.roomNumber = roomNumber;
+    const oldRoomNumber = room.roomNumber;
+    const oldShare = room.shareType;
+    let details = [];
 
+    // 1. Check if Room Number Changed
+    if (roomNumber && roomNumber !== oldRoomNumber) {
+      details.push(`Room No: ${oldRoomNumber} ➔ ${roomNumber}`);
+      room.roomNumber = roomNumber;
+    }
+
+    // 2. Check if Share Type (Beds) Changed
     if (shareType !== undefined) {
       const newShare = Number(shareType);
-      const currentCount = room.beds.length;
-      if (newShare > currentCount) {
-        // Add extra beds
-        for (let i = currentCount + 1; i <= newShare; i++) {
-          room.beds.push({ bedNumber: i });
+      if (newShare !== oldShare) {
+        const currentCount = room.beds.length;
+        if (newShare > currentCount) {
+          // Add extra beds
+          for (let i = currentCount + 1; i <= newShare; i++) {
+            room.beds.push({ bedNumber: i });
+          }
+        } else if (newShare < currentCount) {
+          // Remove beds if not occupied
+          const tailBeds = room.beds.slice(newShare);
+          const occupiedInTail = tailBeds.filter((b) => b.status === "Occupied").length;
+          if (occupiedInTail > 0) {
+            return res.status(400).json({
+              message: `Cannot reduce beds — ${occupiedInTail} bed(s) at the end are still occupied. Vacate them first.`,
+            });
+          }
+          const removedBedIds = tailBeds.map((b) => b._id);
+          await Tenant.updateMany(
+            { bedId: { $in: removedBedIds } },
+            { buildingId: null, floorId: null, roomId: null, bedId: null, allocationInfo: {} }
+          );
+          room.beds = room.beds.slice(0, newShare);
         }
-      } else if (newShare < currentCount) {
-        // Only remove from tail if those beds are available
-        const tailBeds = room.beds.slice(newShare);
-        const occupiedInTail = tailBeds.filter((b) => b.status === "Occupied").length;
-        if (occupiedInTail > 0) {
-          return res.status(400).json({
-            message: `Cannot reduce beds — ${occupiedInTail} bed(s) at the end are still occupied. Vacate them first.`,
-          });
-        }
-        // Vacate tenants linked to removed beds (available ones, just clean references)
-        const removedBedIds = tailBeds.map((b) => b._id);
-        await Tenant.updateMany(
-          { bedId: { $in: removedBedIds } },
-          { buildingId: null, floorId: null, roomId: null, bedId: null, allocationInfo: {} }
-        );
-        room.beds = room.beds.slice(0, newShare);
+        details.push(`Occupancy: ${oldShare} ➔ ${newShare} beds`);
+        room.shareType = newShare;
       }
-      room.shareType = newShare;
     }
 
     await building.save();
+
+    const desc = details.length > 0
+      ? `Updated Room in ${building.buildingName}: ${details.join(" | ")}`
+      : `Updated Room ${room.roomNumber} in ${building.buildingName} (No changes made)`;
+
+    await logActivity(req.user.id, "UPDATE", "Room", desc);
     res.json({ message: "Room updated.", building });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
@@ -331,13 +370,16 @@ router.delete("/:buildingId/floors/:floorId/rooms/:roomId", auth, async (req, re
     if (!floor) return res.status(404).json({ message: "Floor not found." });
     const room = floor.rooms.id(req.params.roomId);
     if (!room) return res.status(404).json({ message: "Room not found." });
-    // Vacate all tenants in this room
+    
     await Tenant.updateMany(
       { roomId: room._id },
       { buildingId: null, floorId: null, roomId: null, bedId: null, allocationInfo: {} }
     );
+    const rn = room.roomNumber;
     room.deleteOne();
     await building.save();
+    
+    await logActivity(req.user.id, "DELETE", "Room", `Deleted Room ${rn} from ${building.buildingName}`);
     res.json({ message: "Room deleted.", building });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });

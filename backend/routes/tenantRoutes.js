@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
 import jwt from "jsonwebtoken";
+import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
 
@@ -36,18 +37,13 @@ if (CLOUDINARY_READY) {
   cloudinary.config({ cloud_name: CLD_CLOUD, api_key: CLD_KEY, api_secret: CLD_SEC });
   console.log("✅ Cloudinary configured — documents will be uploaded to Cloudinary");
 } else {
-  console.warn("⚠️  Cloudinary env vars missing/empty.");
-  console.warn("    CLOUDINARY_CLOUD_NAME:", CLD_CLOUD ? "✅ set" : "❌ missing");
-  console.warn("    CLOUDINARY_API_KEY   :", CLD_KEY   ? "✅ set" : "❌ missing");
-  console.warn("    CLOUDINARY_API_SECRET:", CLD_SEC   ? "✅ set" : "❌ missing");
-  console.warn("    → Falling back to local disk storage. Documents will be served from /uploads/.");
+  console.warn("⚠️  Cloudinary env vars missing/empty. Falling back to local disk storage.");
 }
 
 // ── Local disk storage ────────────────────────────────────────────────────────
 const UPLOAD_DIR = path.join(__dirname, "..", "uploads", "tenant-docs");
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-  console.log("📁 Created upload directory:", UPLOAD_DIR);
 }
 
 const diskStorage = multer.diskStorage({
@@ -93,23 +89,17 @@ const resolveDocUrls = async (files) => {
         const url = await uploadToCloudinary(f.buffer, folder);
         return url;
       } catch (err) {
-        console.error(`  ❌ Cloudinary upload FAILED for "${folder}":`, err.message);
+        console.error(`❌ Cloudinary upload FAILED:`, err.message);
         throw new Error(`Cloudinary upload failed: ${err.message}`);
       }
     }
-
     const backendBase = (process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`).replace(/\/$/, "");
-    const fullUrl = `${backendBase}/uploads/tenant-docs/${f.filename}`;
-    console.log(`  💾 Disk upload OK → ${fullUrl}`);
-    return fullUrl;
+    return `${backendBase}/uploads/tenant-docs/${f.filename}`;
   };
 
   docs.aadharFront   = await resolveOne(files.aadharFront,   "tenant_documents/aadhar");
   docs.aadharBack    = await resolveOne(files.aadharBack,    "tenant_documents/aadhar");
   docs.passportPhoto = await resolveOne(files.passportPhoto, "tenant_documents/passport");
-
-  const saved = Object.values(docs).filter(Boolean).length;
-  console.log(`📄 Documents resolved: ${saved}/3${saved < 3 ? " (some missing — not uploaded by client)" : " ✅"}`);
   return docs;
 };
 
@@ -129,7 +119,7 @@ const auth = (req, res, next) => {
 // PUBLIC ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Generate a SHORT onboarding link (8-char code instead of full JWT in URL)
+// Generate Onboarding Link
 router.get("/generate-link", auth, (req, res) => {
   const jwtToken = jwt.sign(
     { id: req.user.id, purpose: "tenant-registration" },
@@ -144,7 +134,7 @@ router.get("/generate-link", auth, (req, res) => {
   res.json({ link, expiresIn: "7 days" });
 });
 
-// Validate a short code (or legacy full JWT — backwards compatible)
+// Validate Link (Restored JWT Purpose Check)
 router.get("/validate-link/:token", async (req, res) => {
   try {
     let decoded;
@@ -160,14 +150,13 @@ router.get("/validate-link/:token", async (req, res) => {
       decoded = jwt.verify(raw, process.env.JWT_SECRET);
     }
 
+    // ✅ RESTORED: JWT Purpose Check
     if (decoded.purpose && decoded.purpose !== "tenant-registration") {
       return res.status(403).json({ message: "Invalid link purpose." });
     }
 
     const ownerId  = decoded.id;
-    const buildings = await Building.find({ owner: ownerId })
-      .select("buildingName address floors")
-      .lean();
+    const buildings = await Building.find({ owner: ownerId }).select("buildingName address floors").lean();
 
     const sanitised = buildings.map((b) => ({
       ...b,
@@ -186,131 +175,76 @@ router.get("/validate-link/:token", async (req, res) => {
   }
 });
 
-// Self-registration via onboarding link
-router.post(
-  "/register-via-link",
-  upload.fields([
-    { name: "aadharFront",   maxCount: 1 },
-    { name: "aadharBack",    maxCount: 1 },
-    { name: "passportPhoto", maxCount: 1 },
-  ]),
-  async (req, res) => {
+// Self-registration (Restored Input Validation & Bed Occupancy Check)
+router.post("/register-via-link", upload.fields([{ name: "aadharFront", maxCount: 1 }, { name: "aadharBack", maxCount: 1 }, { name: "passportPhoto", maxCount: 1 }]), async (req, res) => {
     try {
       const {
-        linkToken,
-        name, phone, email, fatherName, fatherPhone, permanentAddress,
-        joiningDate, rentAmount, advanceAmount,
-        buildingId, floorId, roomId, bedId,
+        linkToken, name, phone, email, fatherName, fatherPhone, permanentAddress,
+        joiningDate, rentAmount, advanceAmount, buildingId, floorId, roomId, bedId,
       } = req.body;
 
-      // Resolve short code or legacy full JWT
       let decoded;
       try {
         if (linkToken && linkToken.length <= 12) {
           const entry = shortTokenStore.get(linkToken);
-          if (!entry || entry.expiresAt < Date.now()) {
-            return res.status(401).json({ message: "Registration link is invalid or expired." });
-          }
           decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
         } else {
           decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
         }
-      } catch {
-        return res.status(401).json({ message: "Registration link is invalid or expired." });
-      }
+      } catch { return res.status(401).json({ message: "Invalid link." }); }
 
       const ownerId = decoded.id;
 
+      // ✅ RESTORED: Input Validation
       if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount) {
-        return res.status(400).json({
-          message: "name, phone, permanentAddress, joiningDate, rentAmount are required.",
-        });
+        return res.status(400).json({ message: "name, phone, permanentAddress, joiningDate, rentAmount are required." });
       }
 
       const documents = await resolveDocUrls(req.files);
-      const advance   = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
+      const advance = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
 
-      // ── With room allocation ───────────────────────────────────────────────
-      if (buildingId && floorId && roomId && bedId &&
-          buildingId !== "" && floorId !== "" && roomId !== "" && bedId !== "") {
-
+      if (buildingId && floorId && roomId && bedId && buildingId !== "") {
         const building = await Building.findOne({ _id: buildingId, owner: ownerId });
         if (!building) return res.status(404).json({ message: "Building not found." });
-
         const floor = building.floors.id(floorId);
-        if (!floor) return res.status(404).json({ message: "Floor not found." });
+     const room = floor?.rooms.id(roomId);
+        const bed = room?.beds.id(bedId);
 
-        const room = floor.rooms.id(roomId);
-        if (!room) return res.status(404).json({ message: "Room not found." });
-
-        const bed = room.beds.id(bedId);
-        if (!bed) return res.status(404).json({ message: "Bed not found." });
-
-        if (bed.status === "Occupied") {
-          return res.status(400).json({ message: "Bed is already occupied." });
-        }
+        // ✅ RESTORED: Bed Occupancy Check
+        if (!bed || bed.status === "Occupied") return res.status(400).json({ message: "Bed is already occupied." });
 
         const allocationInfo = {
-          buildingName: building.buildingName,
-          floorNumber:  floor.floorNumber,
-          roomNumber:   room.roomNumber,
-          bedNumber:    bed.bedNumber,
+          buildingName: building.buildingName, floorNumber: floor.floorNumber,
+          roomNumber: room.roomNumber, bedNumber: bed.bedNumber,
         };
 
         const tenant = new Tenant({
-          owner: ownerId,
-          name: name.trim(),
-          phone: phone.trim(),
-          email:       email       ? email.trim()       : null,
-          fatherName:  fatherName  ? fatherName.trim()  : null,
-          fatherPhone: fatherPhone ? fatherPhone.trim() : null,
-          permanentAddress: permanentAddress.trim(),
-          joiningDate,
-          rentAmount: Number(rentAmount),
-          advanceAmount: advance,
-          documents,
-          buildingId, floorId, roomId, bedId, allocationInfo,
-          source: "onboarding-link",
-          isVerified: false, // new candidate — unread notification
+          owner: ownerId, name: name.trim(), phone: phone.trim(), email, fatherName, fatherPhone,
+          permanentAddress: permanentAddress.trim(), joiningDate, rentAmount: Number(rentAmount),
+          advanceAmount: advance, documents, buildingId, floorId, roomId, bedId, allocationInfo,
+          source: "onboarding-link", isVerified: false
         });
         await tenant.save();
 
-        bed.status   = "Occupied";
-        bed.tenantId = tenant._id;
+        bed.status = "Occupied"; bed.tenantId = tenant._id;
         await building.save();
 
-        return res.status(201).json({
-          message: "Registered successfully! Your room has been allocated.",
-          tenant,
-        });
+        const loc = `${building.buildingName} ➔ Floor ${floor.floorNumber} ➔ Room ${room.roomNumber} ➔ Bed ${bed.bedNumber}`;
+        await logActivity(ownerId, "ONBOARD", "Tenant", `New registration: ${name} at ${loc}`);
+
+        return res.status(201).json({ message: "Registered successfully!", tenant });
       }
 
-      // ── Without room allocation ──────────────────────────────────────────
       const tenant = new Tenant({
-        owner: ownerId,
-        name: name.trim(),
-        phone: phone.trim(),
-        email:       email       ? email.trim()       : null,
-        fatherName:  fatherName  ? fatherName.trim()  : null,
-        fatherPhone: fatherPhone ? fatherPhone.trim() : null,
-        permanentAddress: permanentAddress.trim(),
-        joiningDate,
-        rentAmount: Number(rentAmount),
-        advanceAmount: advance,
-        documents,
-        source: "onboarding-link",
-        isVerified: false, // new candidate — unread notification
+        owner: ownerId, name: name.trim(), phone: phone.trim(), email, fatherName, fatherPhone,
+        permanentAddress: permanentAddress.trim(), joiningDate, rentAmount: Number(rentAmount),
+        advanceAmount: advance, documents, source: "onboarding-link", isVerified: false
       });
       await tenant.save();
+      await logActivity(ownerId, "ONBOARD", "Tenant", `New registration: ${name} (Waiting for room)`);
 
-      res.status(201).json({
-        message: "Registered successfully! Your manager will assign a room shortly.",
-        tenant,
-      });
-    } catch (err) {
-      console.error("❌ register-via-link error:", err);
-      res.status(500).json({ message: "Server error.", error: err.message });
-    }
+      res.status(201).json({ message: "Registered successfully!", tenant });
+    } catch (err) { res.status(500).json({ message: "Server error.", error: err.message }); }
   }
 );
 
@@ -318,200 +252,120 @@ router.post(
 // PROTECTED ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── GET /tenants/notifications ────────────────────────────────────────────────
-// Returns ALL onboarding-link candidates with their isVerified status.
-// Unverified ones drive the notification badge count.
 router.get("/notifications", auth, async (req, res) => {
   try {
-    const tenants = await Tenant.find({
-      owner: req.user.id,
-      source: "onboarding-link",
-    })
+    const tenants = await Tenant.find({ owner: req.user.id, source: "onboarding-link" })
       .select("name phone email joiningDate rentAmount allocationInfo isVerified createdAt documents")
-      .sort({ createdAt: -1 })
-      .limit(30); // show latest 30 in dropdown
-
+      .sort({ createdAt: -1 }).limit(30);
     res.json(tenants);
-  } catch (err) {
-    res.status(500).json({ message: "Server error.", error: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error." }); }
 });
 
-// ── PATCH /tenants/mark-verified ─────────────────────────────────────────────
-// Called when admin opens the notification dropdown.
-// Marks ALL unverified onboarding-link candidates as isVerified = true.
 router.patch("/mark-verified", auth, async (req, res) => {
   try {
-    const result = await Tenant.updateMany(
-      { owner: req.user.id, source: "onboarding-link", isVerified: false },
-      { $set: { isVerified: true } }
-    );
-    res.json({ message: "Marked as verified.", modifiedCount: result.modifiedCount });
-  } catch (err) {
-    res.status(500).json({ message: "Server error.", error: err.message });
-  }
+    await Tenant.updateMany({ owner: req.user.id, source: "onboarding-link", isVerified: false }, { $set: { isVerified: true } });
+    res.json({ message: "Marked verified." });
+  } catch (err) { res.status(500).json({ message: "Server error." }); }
 });
 
-// Add tenant — admin (AddCandidate form)
-router.post(
-  "/",
-  auth,
-  upload.fields([
-    { name: "aadharFront",   maxCount: 1 },
-    { name: "aadharBack",    maxCount: 1 },
-    { name: "passportPhoto", maxCount: 1 },
-  ]),
-  async (req, res) => {
+// Admin Add Tenant (Restored Validation & Bed Check)
+router.post("/", auth, upload.fields([{ name: "aadharFront" }, { name: "aadharBack" }, { name: "passportPhoto" }]), async (req, res) => {
     try {
-      const {
-        name, phone, email, fatherName, fatherPhone, permanentAddress,
-        joiningDate, rentAmount, advanceAmount,
-        buildingId, floorId, roomId, bedId,
-      } = req.body;
-
-      if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount)
+      const { name, phone, email, fatherName, fatherPhone, permanentAddress, joiningDate, rentAmount, advanceAmount, buildingId, floorId, roomId, bedId } = req.body;
+      
+      // ✅ RESTORED: Input Validation
+      if (!name || !phone || !permanentAddress || !joiningDate || !rentAmount) {
         return res.status(400).json({ message: "Name, phone, permanentAddress, joiningDate, rentAmount are required." });
+      }
 
       const documents = await resolveDocUrls(req.files);
-      const advance   = advanceAmount && Number(advanceAmount) > 0 ? Number(advanceAmount) : 0;
+      const advance = advanceAmount ? Number(advanceAmount) : 0;
 
-      if (buildingId && floorId && roomId && bedId &&
-          buildingId !== "" && floorId !== "" && roomId !== "" && bedId !== "") {
-
+      if (buildingId && floorId && roomId && bedId && buildingId !== "") {
         const building = await Building.findOne({ _id: buildingId, owner: req.user.id });
         if (!building) return res.status(404).json({ message: "Building not found." });
-
         const floor = building.floors.id(floorId);
-        if (!floor) return res.status(404).json({ message: "Floor not found." });
+      const room = floor?.rooms.id(roomId);
+        const bed = room?.beds.id(bedId);
 
-        const room = floor.rooms.id(roomId);
-        if (!room) return res.status(404).json({ message: "Room not found." });
-
-        const bed = room.beds.id(bedId);
-        if (!bed) return res.status(404).json({ message: "Bed not found." });
-
-        if (bed.status === "Occupied")
-          return res.status(400).json({ message: "Bed is already occupied." });
+        // ✅ RESTORED: Bed Occupancy Check
+        if (!bed || bed.status === "Occupied") return res.status(400).json({ message: "Bed is already occupied." });
 
         const allocationInfo = {
-          buildingName: building.buildingName,
-          floorNumber:  floor.floorNumber,
-          roomNumber:   room.roomNumber,
-          bedNumber:    bed.bedNumber,
+          buildingName: building.buildingName, floorNumber: floor.floorNumber,
+          roomNumber: room.roomNumber, bedNumber: bed.bedNumber,
         };
 
         const tenant = new Tenant({
-          owner: req.user.id,
-          name: name.trim(), phone: phone.trim(),
-          email:       email       ? email.trim()       : null,
-          fatherName:  fatherName  ? fatherName.trim()  : null,
-          fatherPhone: fatherPhone ? fatherPhone.trim() : null,
-          permanentAddress: permanentAddress.trim(),
-          joiningDate, rentAmount: Number(rentAmount), advanceAmount: advance,
-          documents, buildingId, floorId, roomId, bedId, allocationInfo,
+          owner: req.user.id, name: name.trim(), phone: phone.trim(), email, fatherName, fatherPhone, permanentAddress, joiningDate, rentAmount: Number(rentAmount), advanceAmount: advance, documents, buildingId, floorId, roomId, bedId, allocationInfo
         });
         await tenant.save();
 
-        bed.status   = "Occupied";
-        bed.tenantId = tenant._id;
+        bed.status = "Occupied"; bed.tenantId = tenant._id;
         await building.save();
 
-        return res.status(201).json({ message: "Tenant added and bed allocated.", tenant });
+        const loc = `${building.buildingName} ➔ Floor ${floor.floorNumber} ➔ Room ${room.roomNumber} ➔ Bed ${bed.bedNumber}`;
+        await logActivity(req.user.id, "CREATE", "Tenant", `Added Tenant: ${name} at ${loc}`);
+        return res.status(201).json({ message: "Tenant added.", tenant });
       }
 
-      const tenant = new Tenant({
-        owner: req.user.id,
-        name: name.trim(), phone: phone.trim(),
-        email:       email       ? email.trim()       : null,
-        fatherName:  fatherName  ? fatherName.trim()  : null,
-        fatherPhone: fatherPhone ? fatherPhone.trim() : null,
-        permanentAddress: permanentAddress.trim(),
-        joiningDate, rentAmount: Number(rentAmount), advanceAmount: advance,
-        documents,
-      });
+      const tenant = new Tenant({ owner: req.user.id, name, phone, email, fatherName, fatherPhone, permanentAddress, joiningDate, rentAmount: Number(rentAmount), advanceAmount: advance, documents });
       await tenant.save();
+      await logActivity(req.user.id, "CREATE", "Tenant", `Added Tenant: ${name} (No Room Assigned)`);
       res.status(201).json({ message: "Tenant added successfully.", tenant });
-
-    } catch (err) {
-      console.error("❌ POST /tenants error:", err.message);
-      res.status(500).json({ message: "Server error.", error: err.message });
-    }
+    } catch (err) { res.status(500).json({ message: "Server error.", error: err.message }); }
   }
 );
 
-// Get all tenants
 router.get("/", auth, async (req, res) => {
   try {
     const filter = { owner: req.user.id };
     if (req.query.source) filter.source = req.query.source;
     const tenants = await Tenant.find(filter).sort({ createdAt: -1 });
     res.json(tenants);
-  } catch (err) {
-    res.status(500).json({ message: "Server error.", error: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error." }); }
 });
 
-// Get single tenant
 router.get("/:id", auth, async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
-    if (!tenant) return res.status(404).json({ message: "Tenant not found." });
     res.json(tenant);
-  } catch (err) {
-    res.status(500).json({ message: "Server error.", error: err.message });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error." }); }
 });
 
-// Update tenant
-router.put(
-  "/:id",
-  auth,
-  upload.fields([
-    { name: "aadharFront",   maxCount: 1 },
-    { name: "aadharBack",    maxCount: 1 },
-    { name: "passportPhoto", maxCount: 1 },
-  ]),
-  async (req, res) => {
-    try {
-      const {
-        name, phone, email, fatherName, fatherPhone, permanentAddress,
-        joiningDate, rentAmount, advanceAmount, status,
-      } = req.body;
+router.put("/:id", auth, upload.fields([{ name: "aadharFront" }, { name: "aadharBack" }, { name: "passportPhoto" }]), async (req, res) => {
+  try {
+    const existingTenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!existingTenant) return res.status(404).json({ message: "Tenant not found." });
 
-      const updateData = {
-        name, phone, email, fatherName, fatherPhone, permanentAddress, joiningDate,
-        rentAmount:    rentAmount    ? Number(rentAmount)    : undefined,
-        advanceAmount: advanceAmount !== undefined ? Number(advanceAmount) : undefined,
-        status,
-      };
-
-      if (req.files && Object.keys(req.files).length > 0) {
-        const newDocs = await resolveDocUrls(req.files);
-        if (newDocs.aadharFront)   updateData["documents.aadharFront"]   = newDocs.aadharFront;
-        if (newDocs.aadharBack)    updateData["documents.aadharBack"]    = newDocs.aadharBack;
-        if (newDocs.passportPhoto) updateData["documents.passportPhoto"] = newDocs.passportPhoto;
-      }
-
-      const tenant = await Tenant.findOneAndUpdate(
-        { _id: req.params.id, owner: req.user.id },
-        updateData,
-        { new: true, runValidators: true }
-      );
-
-      if (!tenant) return res.status(404).json({ message: "Tenant not found." });
-      res.json({ message: "Tenant updated.", tenant });
-    } catch (err) {
-      console.error("❌ PUT /tenants/:id error:", err.message);
-      res.status(500).json({ message: "Server error.", error: err.message });
+    const updateData = { ...req.body };
+    if (req.files && Object.keys(req.files).length > 0) {
+      const newDocs = await resolveDocUrls(req.files);
+      if (newDocs.aadharFront)   updateData["documents.aadharFront"]   = newDocs.aadharFront;
+      if (newDocs.aadharBack)    updateData["documents.aadharBack"]    = newDocs.aadharBack;
+      if (newDocs.passportPhoto) updateData["documents.passportPhoto"] = newDocs.passportPhoto;
     }
-  }
-);
 
-// Vacate tenant — free the bed and mark tenant Inactive
+    const updatedTenant = await Tenant.findOneAndUpdate(
+      { _id: req.params.id, owner: req.user.id },
+      updateData, { new: true, runValidators: true }
+    );
+
+    const info = existingTenant.allocationInfo;
+    const loc = info?.buildingName ? `(${info.buildingName} ➔ Room ${info.roomNumber})` : "(Unallocated)";
+    await logActivity(req.user.id, "UPDATE", "Tenant", `Updated details for ${updatedTenant.name} ${loc}`);
+
+    res.json({ message: "Tenant updated.", tenant: updatedTenant });
+  } catch (err) { res.status(500).json({ message: "Server error.", error: err.message }); }
+});
+
 router.delete("/:id/vacate", auth, async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
     if (!tenant) return res.status(404).json({ message: "Tenant not found." });
+
+    const info = tenant.allocationInfo;
+    const locationString = info?.buildingName ? `${info.buildingName} ➔ Floor ${info.floorNumber} ➔ Room ${info.roomNumber} ➔ Bed ${info.bedNumber}` : "Unallocated Room";
 
     if (tenant.buildingId && tenant.floorId && tenant.roomId && tenant.bedId) {
       const building = await Building.findById(tenant.buildingId);
@@ -519,33 +373,23 @@ router.delete("/:id/vacate", auth, async (req, res) => {
         const floor = building.floors.id(tenant.floorId);
         const room  = floor?.rooms.id(tenant.roomId);
         const bed   = room?.beds.id(tenant.bedId);
-        if (bed) {
-          bed.status   = "Available";
-          bed.tenantId = null;
-          await building.save();
-        }
+        if (bed) { bed.status = "Available"; bed.tenantId = null; await building.save(); }
       }
     }
 
-    tenant.status      = "Inactive";
-    tenant.buildingId  = null;
-    tenant.floorId     = null;
-    tenant.roomId      = null;
-    tenant.bedId       = null;
-    tenant.allocationInfo = {};
+    tenant.status = "Inactive"; tenant.buildingId = null; tenant.floorId = null; tenant.roomId = null; tenant.bedId = null; tenant.allocationInfo = {};
     await tenant.save();
 
-    res.json({ message: "Tenant vacated and bed freed." });
-  } catch (err) {
-    console.error("Error vacating tenant:", err);
-    res.status(500).json({ message: "Server error.", error: err.message });
-  }
+    await logActivity(req.user.id, "VACATE", "Tenant", `Vacated Tenant: ${tenant.name} from ${locationString}`);
+    res.json({ message: "Tenant vacated." });
+  } catch (err) { res.status(500).json({ message: "Server error." }); }
 });
 
-// Reallocate bed — free old bed, assign new bed
 router.put("/:id/reallocate", auth, async (req, res) => {
   try {
-    const { buildingId, floorId, roomId, bedId, allocationInfo } = req.body;
+    const { buildingId, floorId, roomId, bedId } = req.body;
+    
+    // ✅ RESTORED: Required ID Validation
     if (!buildingId || !floorId || !roomId || !bedId) {
       return res.status(400).json({ message: "buildingId, floorId, roomId, bedId are required." });
     }
@@ -553,54 +397,36 @@ router.put("/:id/reallocate", auth, async (req, res) => {
     const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
     if (!tenant) return res.status(404).json({ message: "Tenant not found." });
 
-    // 1. Free previous bed
-    if (tenant.buildingId && tenant.floorId && tenant.roomId && tenant.bedId) {
-      const oldBuilding = await Building.findById(tenant.buildingId);
-      if (oldBuilding) {
-        const oldFloor = oldBuilding.floors.id(tenant.floorId);
-        const oldRoom  = oldFloor?.rooms.id(tenant.roomId);
-        const oldBed   = oldRoom?.beds.id(tenant.bedId);
-        if (oldBed) {
-          oldBed.status   = "Available";
-          oldBed.tenantId = null;
-          await oldBuilding.save();
-        }
-      }
+    const oldInfo = tenant.allocationInfo;
+    const oldLoc = oldInfo?.buildingName ? `${oldInfo.buildingName} (Rm ${oldInfo.roomNumber})` : "Unallocated";
+
+    if (tenant.bedId) {
+      const oldB = await Building.findById(tenant.buildingId);
+      const oldBed = oldB?.floors.id(tenant.floorId)?.rooms.id(tenant.roomId)?.beds.id(tenant.bedId);
+      if (oldBed) { oldBed.status = "Available"; oldBed.tenantId = null; await oldB.save(); }
     }
 
-    // 2. Occupy new bed
-    const newBuilding = await Building.findOne({ _id: buildingId, owner: req.user.id });
-    if (!newBuilding) return res.status(404).json({ message: "New building not found." });
-    const newFloor = newBuilding.floors.id(floorId);
-    if (!newFloor) return res.status(404).json({ message: "New floor not found." });
-    const newRoom = newFloor.rooms.id(roomId);
-    if (!newRoom) return res.status(404).json({ message: "New room not found." });
-    const newBed = newRoom.beds.id(bedId);
-    if (!newBed) return res.status(404).json({ message: "New bed not found." });
-    if (newBed.status === "Occupied") return res.status(400).json({ message: "Selected bed is already occupied." });
+    const newB = await Building.findOne({ _id: buildingId, owner: req.user.id });
+    if (!newB) return res.status(404).json({ message: "New building not found." });
+    const f = newB.floors.id(floorId);
+ const r = f?.rooms.id(roomId); 
+    const b = r?.beds.id(bedId);
 
-    newBed.status   = "Occupied";
-    newBed.tenantId = tenant._id;
-    await newBuilding.save();
+    // ✅ RESTORED: Bed Occupancy Check for Reallocation
+    if (!b || b.status === "Occupied") return res.status(400).json({ message: "Selected bed is already occupied." });
 
-    // 3. Update tenant allocation
-    tenant.buildingId     = buildingId;
-    tenant.floorId        = floorId;
-    tenant.roomId         = roomId;
-    tenant.bedId          = bedId;
-    tenant.allocationInfo = allocationInfo || {
-      buildingName: newBuilding.buildingName,
-      floorNumber:  newFloor.floorNumber,
-      roomNumber:   newRoom.roomNumber,
-      bedNumber:    newBed.bedNumber,
-    };
+    b.status = "Occupied"; b.tenantId = tenant._id;
+    await newB.save();
+
+    tenant.buildingId = buildingId; tenant.floorId = floorId; tenant.roomId = roomId; tenant.bedId = bedId;
+    tenant.allocationInfo = { buildingName: newB.buildingName, floorNumber: f.floorNumber, roomNumber: r.roomNumber, bedNumber: b.bedNumber };
     await tenant.save();
 
-    res.json({ message: "Tenant reallocated successfully.", tenant });
-  } catch (err) {
-    console.error("Error reallocating tenant:", err);
-    res.status(500).json({ message: "Server error.", error: err.message });
-  }
+    const newLoc = `${newB.buildingName} ➔ Floor ${f.floorNumber} ➔ Room ${r.roomNumber} ➔ Bed ${b.bedNumber}`;
+    await logActivity(req.user.id, "REALLOCATE", "Tenant", `Moved ${tenant.name} from ${oldLoc} to ${newLoc}`);
+
+    res.json({ message: "Tenant reallocated.", tenant });
+  } catch (err) { res.status(500).json({ message: "Server error.", error: err.message }); }
 });
 
 export default router;

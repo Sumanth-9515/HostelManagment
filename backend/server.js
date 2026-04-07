@@ -10,6 +10,7 @@ import buildingRoutes from "./routes/buildingRoutes.js";
 import tenantRoutes from "./routes/tenantRoutes.js";
 import masterRoutes from "./routes/masterRoutes.js";
 import rentRoutes from "./routes/Rentroutes.js";
+import activityRoutes from "./routes/activityRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -168,6 +169,8 @@ app.use("/api/buildings", buildingRoutes);
 app.use("/api/tenants",   tenantRoutes);
 app.use("/api/rent",      rentRoutes);
 app.use("/api/master",    masterRoutes);
+app.use('/api/activities', activityRoutes);
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));

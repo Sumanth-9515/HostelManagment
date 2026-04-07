@@ -23,6 +23,7 @@ import ManageLogins from "./pages/master/Managelogins.jsx";
 import TenantOnboardingForm from "./pages/Tenantonboardingform.jsx";
 import OnboardingManager from "./pages/Onboardingmanager.jsx";
 import CandidatesManagement from "./pages/Candidatesmanagement.jsx";
+import ActivityLogs from "./pages/ActivityLogs.jsx";
 
 // ── Auth guards ───────────────────────────────────────────────────────────────
 function RequireUser({ children }) {
@@ -75,6 +76,9 @@ export default function App() {
       } />
           <Route path="/onboarding-manager" element={
         <RequireUser><Layout><OnboardingManager/></Layout></RequireUser>
+      } />
+                <Route path="/activity-logs" element={
+        <RequireUser><Layout><ActivityLogs/></Layout></RequireUser>
       } />
 
       {/* ── Master routes wrapped in MasterLayout ──────────────────────── */}

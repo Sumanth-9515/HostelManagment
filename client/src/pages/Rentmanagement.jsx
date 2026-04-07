@@ -827,6 +827,515 @@ function Toast({ msg, onDone }) {
   return <div className="fixed bottom-6 right-6 z-[70] flex items-center gap-3 bg-emerald-600 border border-emerald-500 text-white px-5 py-3 rounded-2xl shadow-xl animate-bounce-once"><span className="text-lg">✅</span><span className="font-semibold text-sm">{msg}</span></div>;
 }
 
+// ─── useBulkMailEngine — lives in the PARENT, survives popup close ────────────
+// Returns { engineState, engineRefs, startSending, stopSending, fetchAllItems }
+function useBulkMailEngine() {
+  // ── display state (drives re-renders) ──────────────────────────────────────
+  const [phase,          setPhase]          = useState("select");   // idle|sending|done
+  const [allItems,       setAllItems]       = useState([]);
+  const [itemsLoading,   setItemsLoading]   = useState(false);
+  const [sentLog,        setSentLog]        = useState([]);       // [{id,name,status}]
+  const [currentIndex,   setCurrentIndex]   = useState(0);
+  const [currentTenantId, setCurrentTenantId] = useState(null);
+  const [countdown,      setCountdown]      = useState(60);
+  const [sendingCurrent, setSendingCurrent] = useState(false);
+  const [totalInQueue,   setTotalInQueue]   = useState(0);
+
+  // ── refs — never stale inside async callbacks ──────────────────────────────
+  const queueRef    = useRef([]);   // the ordered list of items to send
+  const indexRef    = useRef(0);    // which item we're on right now
+  const activeRef   = useRef(false);// true while the loop is running
+  const timerRef    = useRef(null); // current setTimeout handle
+
+  // ── fetch all due items once ───────────────────────────────────────────────
+  const fetchAllItems = useCallback(async () => {
+    if (allItems.length > 0) return; // already loaded
+    setItemsLoading(true);
+    try {
+      const r = await fetch(`${API}/rent/due?page=1&limit=500`, { headers: authHeader() });
+      const d = await r.json();
+      setAllItems(Array.isArray(d.data) ? d.data : []);
+    } catch {}
+    setItemsLoading(false);
+  }, [allItems.length]);
+
+  // ── core loop — fully ref-driven, zero stale-closure risk ─────────────────
+  const runNext = useCallback(async () => {
+    if (!activeRef.current) return;
+
+    const idx   = indexRef.current;
+    const queue = queueRef.current;
+
+    if (idx >= queue.length) {
+      activeRef.current = false;
+      setPhase("done");
+      setSendingCurrent(false);
+      return;
+    }
+
+    const item = queue[idx];
+    setCurrentIndex(idx);
+    setCurrentTenantId(item.tenant._id);
+    setSendingCurrent(true);
+
+    // ── send the mail ──────────────────────────────────────────────────────
+    let status = "sent";
+    try {
+      const r = await fetch(`${API}/rent/send-reminder`, {
+        method: "POST",
+        headers: authHeader(),
+        body: JSON.stringify({ tenantId: item.tenant._id }),
+      });
+      if (!r.ok) throw new Error();
+    } catch { status = "error"; }
+
+    if (!activeRef.current) return; // stopped while awaiting
+
+    setSentLog((prev) => [...prev, { id: item.tenant._id, name: item.tenant.name, status }]);
+    setSendingCurrent(false);
+
+    indexRef.current = idx + 1;
+
+    const isLast = idx + 1 >= queue.length;
+    if (isLast) {
+      activeRef.current = false;
+      setPhase("done");
+      return;
+    }
+
+    // ── 60-second countdown before next ───────────────────────────────────
+    let remaining = 60;
+    setCountdown(remaining);
+
+    const tick = () => {
+      if (!activeRef.current) return;
+      remaining -= 1;
+      setCountdown(remaining);
+      if (remaining <= 0) {
+        runNext();
+      } else {
+        timerRef.current = setTimeout(tick, 1000);
+      }
+    };
+    timerRef.current = setTimeout(tick, 1000);
+  // runNext is stable because it only reads/writes refs and setters
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── public API ─────────────────────────────────────────────────────────────
+  const startSending = useCallback((queue) => {
+    clearTimeout(timerRef.current);
+    setPhase("select");
+    queueRef.current  = queue;
+    indexRef.current  = 0;
+    activeRef.current = true;
+    setTotalInQueue(queue.length);
+    setSentLog([]);
+    setCurrentIndex(0);
+    setCountdown(60);
+    setPhase("sending");
+    runNext();
+  }, [runNext]);
+
+  const stopSending = useCallback(() => {
+    activeRef.current = false;
+    clearTimeout(timerRef.current);
+    setPhase("select");
+    setSentLog([]);
+    setCurrentIndex(0);
+    setCurrentTenantId(null);
+    setTotalInQueue(0);
+  }, []);
+
+  // cleanup on unmount
+  useEffect(() => () => { activeRef.current = false; clearTimeout(timerRef.current); }, []);
+
+  return {
+    phase, allItems, itemsLoading, sentLog,
+    currentIndex, currentTenantId, countdown, sendingCurrent, totalInQueue,
+    startSending, stopSending, fetchAllItems,
+  };
+}
+
+// ─── Bulk Mail Modal — pure display, receives everything as props ─────────────
+function BulkMailModal({
+  // engine state (lifted to parent)
+  phase, allItems, itemsLoading, sentLog,
+  currentIndex, currentTenantId, countdown, sendingCurrent, totalInQueue,
+  startSending, stopSending,
+  // popup control
+  onMinimize,  // − button: close popup, keep sending
+  onStop,      // ✕ button: stop sending & close popup
+}) {
+  const [selected, setSelected] = useState(new Set());
+
+  // categorise items
+  const sections = [
+    {
+      key: "carryforward",
+      label: "Carry-Forward Pending Dues",
+      subtitle: "Pending dues from previous months",
+      icon: "🔴",
+      color: { header: "bg-rose-50 border-rose-200", badge: "bg-rose-500 text-white", row: "hover:bg-rose-50", accentBg: "bg-rose-100" },
+      items: allItems.filter((i) => i.hasPreviousPending),
+    },
+    {
+      key: "thismonth",
+      label: "This Month's Dues",
+      subtitle: "Overdue or due today / within 2 days",
+      icon: "🟠",
+      color: { header: "bg-amber-50 border-amber-200", badge: "bg-amber-500 text-white", row: "hover:bg-amber-50", accentBg: "bg-amber-100" },
+      items: allItems.filter((i) => !i.hasPreviousPending && i.isOverdue),
+    },
+    {
+      key: "upcoming",
+      label: "Upcoming Due Soon",
+      subtitle: "Due within the next 2 days (not yet overdue)",
+      icon: "🟡",
+      color: { header: "bg-yellow-50 border-yellow-200", badge: "bg-yellow-500 text-white", row: "hover:bg-yellow-50", accentBg: "bg-yellow-100" },
+      items: allItems.filter((i) => !i.hasPreviousPending && !i.isOverdue && i.daysUntilDue !== null),
+    },
+  ];
+
+  // selection helpers
+  const toggle = (id) =>
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const toggleSection = (items) => {
+    const ids    = items.map((i) => i.tenant._id);
+    const allSel = ids.every((id) => selected.has(id));
+    setSelected((prev) => {
+      const n = new Set(prev);
+      allSel ? ids.forEach((id) => n.delete(id)) : ids.forEach((id) => n.add(id));
+      return n;
+    });
+  };
+
+  const handleStart = () => {
+    const queue = allItems.filter((i) => selected.has(i.tenant._id));
+    if (!queue.length) return;
+    startSending(queue);
+  };
+
+  // The current item being processed — find by currentTenantId
+  const currentItem = currentTenantId ? allItems.find((i) => i.tenant._id === currentTenantId) : null;
+  const done        = sentLog.length;
+  const pct         = totalInQueue > 0 ? Math.round((done / totalInQueue) * 100) : 0;
+  const isWaiting   = !sendingCurrent && phase === "sending" && done > 0 && done < totalInQueue;
+
+  // ── inner components ───────────────────────────────────────────────────────
+  const SectionBlock = ({ section }) => {
+    if (section.items.length === 0)
+      return (
+        <div className={`rounded-2xl border ${section.color.header} p-4`}>
+          <div className="flex items-center gap-2 mb-1">
+            <span>{section.icon}</span>
+            <h3 className="font-bold text-gray-800 text-sm">{section.label}</h3>
+          </div>
+          <p className="text-gray-400 text-xs pl-6">No tenants in this category.</p>
+        </div>
+      );
+
+    const allSel  = section.items.every((i) => selected.has(i.tenant._id));
+    const someSel = section.items.some((i) => selected.has(i.tenant._id));
+
+    return (
+      <div className={`rounded-2xl border ${section.color.header} overflow-hidden`}>
+        <div className={`flex items-center justify-between px-4 py-3 border-b ${section.color.header}`}>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base">{section.icon}</span>
+            <div className="min-w-0">
+              <p className="font-bold text-gray-800 text-sm leading-tight">{section.label}</p>
+              <p className="text-gray-500 text-[11px]">{section.subtitle}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${section.color.badge}`}>{section.items.length}</span>
+            <button
+              onClick={() => toggleSection(section.items)}
+              className="text-xs font-semibold px-3 py-1 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              {allSel ? "Deselect All" : someSel ? "Select Rest" : "Select All"}
+            </button>
+          </div>
+        </div>
+
+        <div className="divide-y divide-gray-100 bg-white">
+          {section.items.map((item) => {
+            const { tenant, totalAccumulatedDue, remaining, isOverdue, daysUntilDue, daysOverdue } = item;
+            const alloc    = tenant.allocationInfo || {};
+            const isSel    = selected.has(tenant._id);
+            const logEntry = sentLog.find((l) => l.id === tenant._id);
+            const isActive = phase === "sending" && sendingCurrent && currentTenantId === tenant._id;
+
+            return (
+              <div
+                key={tenant._id}
+                onClick={() => phase === "select" && !logEntry && toggle(tenant._id)}
+                className={`flex items-center gap-3 px-4 py-3 transition-colors
+                  ${phase === "select" && !logEntry ? `cursor-pointer ${section.color.row}` : "cursor-default"}
+                  ${isActive ? "bg-violet-50" : ""}
+                  ${isSel && !logEntry ? "bg-opacity-60" : ""}`}
+              >
+                {/* Status / checkbox */}
+                <div className="shrink-0 w-5 flex items-center justify-center">
+                  {logEntry ? (
+                    <span className="text-base">{logEntry.status === "sent" ? "✅" : "❌"}</span>
+                  ) : isActive ? (
+                    <div className="w-4 h-4 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={isSel}
+                      disabled={phase !== "select"}
+                      onChange={() => toggle(tenant._id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded cursor-pointer"
+                    />
+                  )}
+                </div>
+
+                {/* Avatar */}
+                <div className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-sm font-black overflow-hidden border-2
+                  ${item.hasPreviousPending ? "border-rose-300 bg-rose-100 text-rose-700" : "border-amber-300 bg-amber-100 text-amber-700"}`}>
+                  {tenant.documents?.passportPhoto
+                    ? <img src={tenant.documents.passportPhoto} alt={tenant.name} className="w-full h-full object-cover" />
+                    : tenant.name?.[0]?.toUpperCase()}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm truncate">{tenant.name}</p>
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                    {alloc.buildingName && <span className="text-gray-400 text-[10px]">🏢 {alloc.buildingName}</span>}
+                    {alloc.roomNumber   && <span className="text-gray-400 text-[10px]">🚪 Room {alloc.roomNumber}</span>}
+                    {tenant.email       && <span className="text-gray-400 text-[10px] truncate max-w-[140px]">✉️ {tenant.email}</span>}
+                  </div>
+                </div>
+
+                {/* Amount */}
+                <div className="text-right shrink-0">
+                  <p className={`font-black text-sm ${item.hasPreviousPending || isOverdue ? "text-rose-600" : "text-amber-600"}`}>
+                    {fmt(totalAccumulatedDue || remaining || 0)}
+                  </p>
+                  {isOverdue && daysOverdue > 0
+                    ? <span className="text-rose-500 text-[10px] font-semibold">{daysOverdue}d overdue</span>
+                    : daysUntilDue === 0
+                    ? <span className="text-amber-500 text-[10px] font-semibold">Due today</span>
+                    : daysUntilDue !== null
+                    ? <span className="text-amber-500 text-[10px] font-semibold">In {daysUntilDue}d</span>
+                    : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-[65] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-2xl flex flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden" style={{ maxHeight: "92vh" }}>
+
+        {/* ── Header ── */}
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-white">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center shrink-0">
+              <span className="text-base">📧</span>
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-gray-900 font-bold text-base leading-tight">Bulk Mail Reminders</h2>
+              <p className="text-gray-400 text-[11px]">
+                {phase === "sending"
+                  ? `Sending in background… ${done} / ${totalInQueue} done`
+                  : phase === "done"
+                  ? `Completed — ${sentLog.filter((l) => l.status === "sent").length} sent, ${sentLog.filter((l) => l.status === "error").length} failed`
+                  : "Select tenants and send automated payment reminders"}
+              </p>
+            </div>
+          </div>
+
+          {/* Two close buttons */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-3">
+            {/* − Minimise: close popup, keep sending */}
+            <button
+              onClick={onMinimize}
+              title="Minimise — mails will continue sending in background"
+              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-violet-100 text-violet-500 hover:text-violet-700 border border-violet-200 transition-colors font-bold text-lg leading-none"
+            >
+              −
+            </button>
+            {/* ✕ Stop & close */}
+            <button
+              onClick={onStop}
+              title={phase === "sending" ? "Stop sending & close" : "Close"}
+              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* ── Body ── */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Loading */}
+          {itemsLoading && (
+            <div className="flex flex-col items-center justify-center gap-3 py-16">
+              <div className="w-8 h-8 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
+              <p className="text-gray-400 text-sm">Loading tenants…</p>
+            </div>
+          )}
+
+          {/* Selection view */}
+          {!itemsLoading && phase === "select" && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+                <span className="text-blue-500 text-base shrink-0 mt-0.5">🛡️</span>
+                <p className="text-blue-700 text-xs leading-relaxed">
+                  For Security Reasons, mails are sent <strong>one at a time</strong> with a <strong>60-second gap</strong> between each.
+                  You can <strong>minimise (−)</strong> this popup — sending will continue in the background.
+                </p>
+              </div>
+              {sections.map((s) => <SectionBlock key={s.key} section={s} />)}
+            </div>
+          )}
+
+          {/* Sending / Done view */}
+          {!itemsLoading && (phase === "sending" || phase === "done") && (
+            <div className="p-4 space-y-4">
+
+              {/* Progress bar */}
+              <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                <div className="flex justify-between text-xs text-gray-500 mb-2">
+                  <span className="font-semibold text-violet-700">
+                    {phase === "done" ? "✅ All done!" : `Sending ${done + (sendingCurrent ? 1 : 0)} of ${totalInQueue}…`}
+                  </span>
+                  <span className="font-bold">{pct}%</span>
+                </div>
+                <div className="w-full h-3 rounded-full bg-white border border-violet-200 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${phase === "done" ? "bg-emerald-500" : "bg-gradient-to-r from-violet-500 to-violet-400"}`}
+                    style={{ width: `${phase === "done" ? 100 : pct}%` }}
+                  />
+                </div>
+
+                {/* Current tenant card */}
+                {phase === "sending" && currentItem && (
+                  <div className="mt-4 bg-white rounded-xl border border-violet-200 px-4 py-3 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-violet-100 border-2 border-violet-300 flex items-center justify-center text-base font-black text-violet-700 overflow-hidden shrink-0">
+                      {currentItem.tenant.documents?.passportPhoto
+                        ? <img src={currentItem.tenant.documents.passportPhoto} alt={currentItem.tenant.name} className="w-full h-full object-cover" />
+                        : currentItem.tenant.name?.[0]?.toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-900 text-sm">{currentItem.tenant.name}</p>
+                      <p className="text-gray-400 text-xs truncate">{currentItem.tenant.email || "No email on record"}</p>
+                    </div>
+                    {sendingCurrent ? (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="w-3.5 h-3.5 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
+                        <span className="text-violet-600 text-xs font-semibold">Sending…</span>
+                      </div>
+                    ) : isWaiting ? (
+                      /* countdown ring */
+                      <div className="flex flex-col items-center shrink-0">
+                        <div className="relative w-12 h-12">
+                          <svg className="w-full h-full -rotate-90" viewBox="0 0 48 48">
+                            <circle cx="24" cy="24" r="20" fill="none" stroke="#ede9fe" strokeWidth="4" />
+                            <circle
+                              cx="24" cy="24" r="20" fill="none"
+                              stroke="#8b5cf6" strokeWidth="4" strokeLinecap="round"
+                              strokeDasharray={`${2 * Math.PI * 20}`}
+                              strokeDashoffset={`${2 * Math.PI * 20 * (countdown / 60)}`}
+                              className="transition-all duration-1000"
+                            />
+                          </svg>
+                          <span className="absolute inset-0 flex items-center justify-center text-violet-700 font-black text-xs">{countdown}</span>
+                        </div>
+                        <p className="text-gray-400 text-[9px] mt-0.5">next in</p>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+
+              {/* Sent log (shown while sending AND in done state) */}
+              {sentLog.length > 0 && (
+                <div className="rounded-2xl border border-gray-200 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                    <p className="text-gray-600 text-xs font-semibold uppercase tracking-wide">Send Log</p>
+                    <span className="text-xs text-gray-400">{sentLog.filter((l) => l.status === "sent").length} ✅ · {sentLog.filter((l) => l.status === "error").length} ❌</span>
+                  </div>
+                  <div className="divide-y divide-gray-100 max-h-56 overflow-y-auto bg-white">
+                    {sentLog.map((log, i) => (
+                      <div key={log.id} className="flex items-center gap-3 px-4 py-2.5">
+                        <span className="text-gray-400 text-[10px] font-mono w-5 shrink-0">{i + 1}</span>
+                        <span className="flex-1 text-gray-800 text-sm font-medium truncate">{log.name}</span>
+                        {log.status === "sent"
+                          ? <span className="text-emerald-600 text-xs font-semibold">✅ Sent</span>
+                          : <span className="text-rose-500 text-xs font-semibold">❌ Failed</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Show sections with live status markers while sending */}
+              {phase === "sending" && (
+                <div className="space-y-3">
+                  {sections.map((s) => <SectionBlock key={s.key} section={s} />)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Footer ── */}
+        <div className="shrink-0 border-t border-gray-200 bg-white px-5 py-4">
+          {phase === "select" && !itemsLoading && (
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-gray-600">
+                {selected.size > 0
+                  ? <><span className="font-bold text-gray-900">{selected.size}</span> tenant{selected.size !== 1 ? "s" : ""} selected</>
+                  : <span className="text-gray-400">No tenants selected</span>}
+              </p>
+              <div className="flex gap-2">
+                <button onClick={onMinimize} className="px-4 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
+                <button
+                  onClick={handleStart}
+                  disabled={selected.size === 0}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-violet-500 hover:bg-violet-600 text-white font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all"
+                >
+                  ✉️ Send {selected.size > 0 ? `${selected.size} ` : ""}Mail{selected.size !== 1 ? "s" : ""}
+                </button>
+              </div>
+            </div>
+          )}
+          {phase === "sending" && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-gray-400 text-xs">
+                🔒 Mails continue even if you close this popup.
+              </p>
+              <button
+                onClick={onMinimize}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 font-semibold text-xs hover:bg-violet-100 transition-colors"
+              >
+                − Minimise
+              </button>
+            </div>
+          )}
+          {phase === "done" && (
+            <button onClick={onStop} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm active:scale-95 transition-all">
+              ✅ Done — Close
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Pagination Controls ──────────────────────────────────────────────────────
 function Pagination({ page, totalPages, total, limit, onPageChange, loading }) {
   if (totalPages <= 1) return null;
@@ -907,11 +1416,15 @@ export default function RentManagement() {
   const [searchDone,    setSearchDone]    = useState(false);
   const searchDebounceRef = useRef(null);
 
+  // ── Bulk mail engine (lives here so it survives popup close) ──────────────
+  const bulkEngine = useBulkMailEngine();
+
   // Modals / toast
   const [selectedTenantId, setSelectedTenantId] = useState(null);
   const [payModal,         setPayModal]          = useState(null);
   const [toast,            setToast]             = useState("");
   const [paymentDone,      setPaymentDone]        = useState(0);
+  const [showBulkMail,     setShowBulkMail]       = useState(false);
 
   // ── Fetch a single page from /due ─────────────────────────────────────────
   const loadDuePage = useCallback(async (pageNum = 1) => {
@@ -1024,6 +1537,28 @@ export default function RentManagement() {
                 {total} due
               </span>
             )}
+            <button
+            onClick={() => { 
+  setShowBulkMail(true); 
+  // This ensures that even if we were in "idle" or "done", we start at selection
+  if (bulkEngine.phase !== "sending") {
+    bulkEngine.stopSending(); // This forces a reset to "select" phase
+  }
+  bulkEngine.fetchAllItems(); 
+}}
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all duration-200 shadow-sm
+                ${bulkEngine.phase === "sending"
+                  ? "bg-violet-500 border-violet-500 text-white"
+                  : "bg-violet-50 hover:bg-violet-500 border-violet-200 text-violet-700 hover:text-white"}`}
+            >
+              📧 <span className="hidden sm:inline">Send Bulk Emails</span>
+              {bulkEngine.phase === "sending" && (
+                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
+                </span>
+              )}
+            </button>
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-gray-500 text-xs">Live</span>
           </div>
@@ -1184,6 +1719,23 @@ export default function RentManagement() {
           initialMonthYear={payModal.initialMonthYear}
           onClose={() => setPayModal(null)}
           onSuccess={onPaySuccess}
+        />
+      )}
+      {showBulkMail && (
+        <BulkMailModal
+          phase={bulkEngine.phase}
+          allItems={bulkEngine.allItems}
+          itemsLoading={bulkEngine.itemsLoading}
+          sentLog={bulkEngine.sentLog}
+          currentIndex={bulkEngine.currentIndex}
+          currentTenantId={bulkEngine.currentTenantId}
+          countdown={bulkEngine.countdown}
+          sendingCurrent={bulkEngine.sendingCurrent}
+          totalInQueue={bulkEngine.totalInQueue}
+          startSending={bulkEngine.startSending}
+          stopSending={bulkEngine.stopSending}
+          onMinimize={() => setShowBulkMail(false)}
+          onStop={() => { bulkEngine.stopSending(); setShowBulkMail(false); }}
         />
       )}
       {toast && <Toast msg={toast} onDone={() => setToast("")} />}

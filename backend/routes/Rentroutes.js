@@ -9,6 +9,7 @@ import axios from "axios";
 import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
 import RentPayment from "../models/Rentpayment.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
 
@@ -118,6 +119,25 @@ async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
     daysOverdue,
     daysUntilDue,
     dueDate: currentRecord.dueDate,
+  };
+}
+
+async function getBuildingDetailsForTenant(tenant) {
+  if (!tenant.buildingId) return null;
+  
+  const building = await Building.findById(tenant.buildingId).lean();
+  if (!building) return null;
+
+  const floor = building.floors.find((f) => f._id.toString() === tenant.floorId?.toString());
+  const room = floor?.rooms.find((r) => r._id.toString() === tenant.roomId?.toString());
+
+  return {
+    buildingName: building.buildingName,
+    address: building.address,
+    floorNumber: floor?.floorNumber,
+    floorName: floor?.floorName,
+    roomNumber: room?.roomNumber,
+    shareType: room?.shareType,
   };
 }
 
@@ -714,13 +734,25 @@ router.post("/pay", auth, async (req, res) => {
     else if (record.paidAmount > 0) record.status = "Partial";
 
     await record.save();
+       await logActivity(
+      req.user.id, 
+      "PAYMENT", 
+      "Rent", 
+      `Received rent payment of ₹${actualPay} from ${tenant.name}`
+    );
 
-    if (tenant.email) {
+  if (tenant.email) {
       try {
+        // 1. Fetch building details
+        const buildingDetails = await getBuildingDetailsForTenant(tenant);
+
+        // 2. Generate the correct template (passing the buildingDetails)
         const emailTemplate =
           record.status === "Paid"
-            ? buildFullPaymentEmail({ tenant, record, paymentAmount: actualPay, buildingDetails: null })
-            : buildPartialPaymentEmail({ tenant, record, paymentAmount: actualPay, buildingDetails: null });
+            ? buildFullPaymentEmail({ tenant, record, paymentAmount: actualPay, buildingDetails })
+            : buildPartialPaymentEmail({ tenant, record, paymentAmount: actualPay, buildingDetails });
+
+        // 3. Send the email
         await sendBrevoEmail(tenant.email, tenant.name, emailTemplate.subject, emailTemplate.html);
       } catch (e) {
         console.error("Email failed:", e.message);
@@ -744,7 +776,18 @@ router.post("/send-reminder", auth, async (req, res) => {
       return res.status(400).json({ message: "Rent already paid." });
     }
 
-    const { subject, html } = buildReminderEmail({ tenant, record: summary.currentRecord, ...summary });
+    // 1. Fetch building details
+    const buildingDetails = await getBuildingDetailsForTenant(tenant);
+
+    // 2. Generate the email content using the reminder template
+    const { subject, html } = buildReminderEmail({ 
+      tenant, 
+      record: summary.currentRecord, 
+      buildingDetails, 
+      ...summary 
+    });
+
+    // 3. Send the email
     await sendBrevoEmail(tenant.email, tenant.name, subject, html);
 
     res.json({ message: `Reminder sent to ${tenant.email}.` });

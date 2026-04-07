@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Users,
   Bell,
+  Volume2  ,
 } from "lucide-react";
 
 const NAV = [
@@ -24,8 +25,9 @@ const NAV = [
   { to: "/addcandidate",       label: "Add Candidate",       icon: <UserPlus size={20} /> },
   { to: "/candidates",         label: "Total Candidates",    icon: <Users size={20} /> },
   { to: "/addhostel",          label: "Property Management", icon: <Building2 size={20} /> },
-  { to: "/overview",           label: "Overview",            icon: <Eye size={20} /> },
+  { to: "/overview",           label: "Buildings Overview",            icon: <Eye size={20} /> },
   { to: "/onboarding-manager", label: "Onboarding Manager",  icon: <UserPlus size={20} /> },
+  { to: "/activity-logs", label: "Activity Logs", icon: <Volume2 size={20} /> },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -336,7 +338,7 @@ function BellButton({ buttonRef, unreadCount, onClick, isOpen, collapsed }) {
       </span>
       {!collapsed && (
         <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-2,#64748b)", whiteSpace: "nowrap" }}>
-          Notifications
+          Onboarding Notifications
         </span>
       )}
     </button>
@@ -535,7 +537,7 @@ export default function Layout({ children }) {
         }}>
           {(isOpen || isMobile) && (
             <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: "0.08em", color: "var(--text)" }}>
-              HOSTELIQ
+              NILAYAM
             </div>
           )}
           <button
