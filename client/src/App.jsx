@@ -24,6 +24,10 @@ import TenantOnboardingForm from "./pages/Tenantonboardingform.jsx";
 import OnboardingManager from "./pages/Onboardingmanager.jsx";
 import CandidatesManagement from "./pages/Candidatesmanagement.jsx";
 import ActivityLogs from "./pages/ActivityLogs.jsx";
+import MasterPlanSettings from "./pages/master/Masterplansettings.jsx";
+import MasterApprovals from "./pages/master/Masterapprovals.jsx";
+import LandingPage from "./pages/Landingpage.jsx";
+import MasterPlanMonitor from "./pages/master/Masterplanmonitor.jsx";
 
 // ── Auth guards ───────────────────────────────────────────────────────────────
 function RequireUser({ children }) {
@@ -45,9 +49,10 @@ function RequireMaster({ children }) {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/login" replace />} />
+
 
       {/* ── Public ─────────────────────────────────────────────────────── */}
+       <Route path="/"    element={<LandingPage/>} />
       <Route path="/login"    element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/tenant-onboarding" element={<TenantOnboardingForm />} />
@@ -90,6 +95,15 @@ export default function App() {
       } />
           <Route path="/master/logins" element={
         <RequireMaster><MasterLayout><ManageLogins /></MasterLayout></RequireMaster>
+      } />
+            <Route path="/master/plan-settings" element={
+        <RequireMaster><MasterLayout><MasterPlanSettings /></MasterLayout></RequireMaster>
+      } />
+            <Route path="/master/approvals" element={
+        <RequireMaster><MasterLayout><MasterApprovals /></MasterLayout></RequireMaster>
+      } />
+                  <Route path="/master/plan-monitor" element={
+        <RequireMaster><MasterLayout><MasterPlanMonitor /></MasterLayout></RequireMaster>
       } />
 
       {/* ── Fallback ───────────────────────────────────────────────────── */}

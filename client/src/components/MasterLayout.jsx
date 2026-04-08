@@ -16,7 +16,10 @@ const Icons = {
 const NAV = [
   { to: "/master/dashboard", label: "Overview", icon: <Icons.Overview /> },
   { to: "/master/users",     label: "Users",    icon: <Icons.Users />    },
-  { to: "/master/logins",    label: "Logins",   icon: <Icons.Logins />   }
+  { to: "/master/logins",    label: "Logins",   icon: <Icons.Logins />   },
+  { to: "/master/plan-settings", label: "Plan Settings", icon: <Icons.Overview /> },
+  { to: "/master/approvals", label: "Approvals", icon: <Icons.Overview /> },
+  { to: "/master/plan-monitor", label: "Plan Monitor", icon: <Icons.Overview /> },
 ];
 
 export default function MasterLayout({ children }) {

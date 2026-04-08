@@ -183,6 +183,15 @@ export default function TenantOnboardingForm() {
   const [passportPreview, setPassportPreview] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
 
+  // ── Email OTP verification state ──────────────────────────────────────────
+  const [otpSent,      setOtpSent]      = useState(false);
+  const [otpValue,     setOtpValue]     = useState("");
+  const [emailVerified,setEmailVerified]= useState(false);
+  const [verifiedEmail,setVerifiedEmail]= useState(""); // track which email was verified
+  const [otpLoading,   setOtpLoading]   = useState(false);
+  const [otpError,     setOtpError]     = useState("");
+  const [otpSuccess,   setOtpSuccess]   = useState("");
+
   const refs = {
     aadharFront: useRef(),
     aadharBack: useRef(),
@@ -352,11 +361,77 @@ if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
   };
 
 const set = k => e => {
-  setForm(f => ({ ...f, [k]: e.target.value }));
-
+  const val = e.target.value;
+  setForm(f => ({ ...f, [k]: val }));
   setFieldErrors(prev => ({ ...prev, [k]: "" }));
   setError("");
+
+  // If email is changed after verification → reset verification
+  if (k === "email" && emailVerified && val !== verifiedEmail) {
+    setEmailVerified(false);
+    setVerifiedEmail("");
+    setOtpSent(false);
+    setOtpValue("");
+    setOtpError("");
+    setOtpSuccess("");
+  }
 };
+
+  // ── Send OTP ──────────────────────────────────────────────────────────────
+  const sendOtp = async () => {
+    const email = form.email.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setOtpError("Please enter a valid email address first.");
+      return;
+    }
+    setOtpLoading(true);
+    setOtpError("");
+    setOtpSuccess("");
+    try {
+      const res  = await fetch(`${API}/tenants/send-email-otp`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email, name: form.name || "Tenant" }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setOtpError(data.message || "Failed to send OTP."); return; }
+      setOtpSent(true);
+      setOtpSuccess(`OTP sent to ${email}. Check your inbox.`);
+    } catch {
+      setOtpError("Connection error. Please try again.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  // ── Verify OTP ────────────────────────────────────────────────────────────
+  const verifyOtp = async () => {
+    if (!otpValue || otpValue.length !== 5) {
+      setOtpError("Please enter the 5-digit OTP.");
+      return;
+    }
+    setOtpLoading(true);
+    setOtpError("");
+    try {
+      const res  = await fetch(`${API}/tenants/verify-email-otp`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email: form.email.trim(), otp: otpValue }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setOtpError(data.message || "Invalid OTP."); return; }
+      setEmailVerified(true);
+      setVerifiedEmail(form.email.trim());
+      setOtpSent(false);
+      setOtpValue("");
+      setOtpSuccess("Email verified successfully!");
+      setOtpError("");
+    } catch {
+      setOtpError("Connection error. Please try again.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
 
   /* ═══════ Render helpers ═══════ */
   const selStyle = { ...inp, paddingRight: 36, appearance: "none", cursor: "pointer" };
@@ -514,14 +589,96 @@ const set = k => e => {
               </TwoCol>
 
               <TwoCol>
-                <Field label="Email Address*">
-                  <FocusInput type="email" placeholder="you@email.com" value={form.email} onChange={set("email")} required />
-                  {fieldErrors.email && (
-  <span style={{ color: "red", fontSize: 11 }}>
-    {fieldErrors.email}
-  </span>
-)}
+                <Field label="Email Address *">
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <FocusInput
+                        type="email"
+                        placeholder="you@email.com"
+                        value={form.email}
+                        onChange={set("email")}
+                        required
+                      />
+                      {/* Show verified badge OR Send OTP button */}
+                      {emailVerified ? (
+                        <span style={{
+                          whiteSpace: "nowrap", fontSize: 12, fontWeight: 700,
+                          color: "#10b981", background: "#d1fae5",
+                          padding: "6px 12px", borderRadius: 8,
+                          border: "1.5px solid #10b981", flexShrink: 0,
+                        }}>✓ Verified</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={sendOtp}
+                          disabled={otpLoading}
+                          style={{
+                            whiteSpace: "nowrap", padding: "8px 12px", borderRadius: 8,
+                            border: "1.5px solid #6366f1", background: otpLoading ? "#e0e7ff" : "#eef2ff",
+                            color: "#4338ca", fontSize: 12, fontWeight: 700,
+                            cursor: otpLoading ? "not-allowed" : "pointer", flexShrink: 0,
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          {otpLoading ? "Sending…" : otpSent ? "Resend OTP" : "Send OTP"}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Field error */}
+                    {fieldErrors.email && (
+                      <span style={{ color: "#dc2626", fontSize: 11 }}>{fieldErrors.email}</span>
+                    )}
+
+                    {/* OTP input row — shown after OTP is sent */}
+                    {otpSent && !emailVerified && (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 2 }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={5}
+                          placeholder="Enter 5-digit OTP"
+                          value={otpValue}
+                          onChange={e => {
+                            setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 5));
+                            setOtpError("");
+                          }}
+                          style={{
+                            ...inp, flex: 1, letterSpacing: 6, textAlign: "center",
+                            fontSize: 18, fontWeight: 700, color: "#4338ca",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={verifyOtp}
+                          disabled={otpLoading}
+                          style={{
+                            padding: "8px 14px", borderRadius: 8, border: "none",
+                            background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                            color: "#fff", fontSize: 12, fontWeight: 700,
+                            cursor: otpLoading ? "not-allowed" : "pointer",
+                            flexShrink: 0, fontFamily: "inherit",
+                          }}
+                        >
+                          {otpLoading ? "Verifying…" : "Verify"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* OTP success / error messages */}
+                    {otpSuccess && !otpError && (
+                      <span style={{ fontSize: 12, color: "#10b981", fontWeight: 600 }}>
+                        ✓ {otpSuccess}
+                      </span>
+                    )}
+                    {otpError && (
+                      <span style={{ fontSize: 12, color: "#dc2626", fontWeight: 600 }}>
+                        ⚠ {otpError}
+                      </span>
+                    )}
+                  </div>
                 </Field>
+
            <Field label="Father's Name *">
   <FocusInput
     placeholder="Father's full name"
@@ -552,6 +709,9 @@ const set = k => e => {
 
               <Field label="Permanent Address *">
                 <FocusTarea placeholder="Full permanent address with city and state" value={form.permanentAddress} onChange={set("permanentAddress")} />
+                {fieldErrors.permanentAddress && (
+                  <span style={{ color: "red", fontSize: 11 }}>{fieldErrors.permanentAddress}</span>
+                )}
               </Field>
 
               <SectionLabel>Tenancy Details</SectionLabel>
@@ -573,7 +733,27 @@ const set = k => e => {
                 </span>
               </Field>
 
-              <PrimaryBtn onClick={() => next(validate1, 2)} style={{ marginTop: 8 }}>
+              {/* ── Email verification warning (shown when not verified) ── */}
+              {!emailVerified && form.email && (
+                <div style={{
+                  padding: "10px 14px", background: "#fffbeb",
+                  border: "1px solid #fcd34d", borderRadius: 8,
+                  fontSize: 12, color: "#92400e", display: "flex", alignItems: "center", gap: 8,
+                }}>
+                  📧 Please verify your email with OTP before proceeding.
+                </div>
+              )}
+
+              <PrimaryBtn
+                onClick={() => {
+                  if (!emailVerified) {
+                    setError("Email verification is mandatory. Please verify your email with OTP.");
+                    return;
+                  }
+                  next(validate1, 2);
+                }}
+                style={{ marginTop: 8, opacity: emailVerified ? 1 : 0.65 }}
+              >
                 Next: Upload Documents →
               </PrimaryBtn>
             </div>

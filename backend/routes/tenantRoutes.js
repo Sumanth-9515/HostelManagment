@@ -5,6 +5,7 @@ import { v2 as cloudinary } from "cloudinary";
 import crypto from "crypto";
 import path from "path";
 import fs from "fs";
+import axios from "axios";
 import { fileURLToPath } from "url";
 import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
@@ -25,6 +26,147 @@ setInterval(() => {
     if (v.expiresAt < now) shortTokenStore.delete(k);
   }
 }, 60 * 60 * 1000);
+
+// ── In-memory OTP store (5-digit, 10-min expiry) ──────────────────────────────
+const emailOtpStore = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of emailOtpStore.entries()) {
+    if (v.expiresAt < now) emailOtpStore.delete(k);
+  }
+}, 5 * 60 * 1000);
+
+// ── Brevo email helper (same pattern as rentRoutes.js) ────────────────────────
+const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
+
+async function sendBrevoEmail(toEmail, toName, subject, htmlContent) {
+  const apiKey      = (process.env.BREVO_API_KEY       || "").trim();
+  const senderEmail = (process.env.BREVO_SENDER_EMAIL  || "").trim();
+  const senderName  = (process.env.BREVO_SENDER_NAME   || "Nilayam Hostel").trim();
+  if (!apiKey || !senderEmail) throw new Error("Brevo credentials missing in .env");
+  const { data } = await axios.post(BREVO_API_URL, {
+    sender: { name: senderName, email: senderEmail },
+    to:     [{ email: toEmail, name: toName }],
+    subject,
+    htmlContent,
+  }, {
+    headers: { "Content-Type": "application/json", "api-key": apiKey },
+  });
+  return data;
+}
+
+// ── OTP email template ────────────────────────────────────────────────────────
+const otpEmailHtml = (otpCode) => `
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Tahoma,sans-serif;">
+  <table width="100%" cellspacing="0" cellpadding="0" style="padding:40px 15px;">
+    <tr><td align="center">
+      <table width="520" cellspacing="0" cellpadding="0"
+             style="background:#fff;border-radius:16px;overflow:hidden;
+                    box-shadow:0 8px 24px rgba(0,0,0,0.09);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#1e1b4b,#4338ca,#6366f1);
+                     padding:36px 32px;text-align:center;">
+            <div style="font-size:40px;margin-bottom:10px;">🏨</div>
+            <h1 style="margin:0;font-size:22px;color:#fff;font-weight:800;">
+              Verify Your Email
+            </h1>
+            <p style="margin:8px 0 0;color:#c7d2fe;font-size:13px;">
+              Nilayam Hostel — Tenant Onboarding
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 32px;">
+            <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+              Use the one-time code below to verify your email address.
+              This code expires in <strong>10 minutes</strong>.
+            </p>
+            <div style="text-align:center;margin:28px 0;">
+              <span style="display:inline-block;letter-spacing:10px;font-size:42px;
+                           font-weight:800;color:#4338ca;background:#eef2ff;
+                           padding:16px 32px;border-radius:14px;
+                           border:2px solid #c7d2fe;">
+                ${otpCode}
+              </span>
+            </div>
+            <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;line-height:1.6;">
+              Do not share this code with anyone.<br/>
+              If you did not request this, please ignore this email.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;padding:16px 32px;text-align:center;
+                     font-size:12px;color:#9ca3af;">
+            &copy; ${new Date().getFullYear()} Nilayam Hostel Management
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+// ── POST /api/tenants/send-email-otp ─────────────────────────────────────────
+router.post("/send-email-otp", async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, message: "Valid email is required." });
+    }
+
+    // Generate 5-digit OTP
+    const otp = String(Math.floor(10000 + Math.random() * 90000));
+
+    // Store with 10-min expiry
+    emailOtpStore.set(email.toLowerCase().trim(), {
+      otp,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    });
+
+    await sendBrevoEmail(
+      email.trim(),
+      name || "Tenant",
+      "Your Email Verification OTP — Nilayam Hostel",
+      otpEmailHtml(otp)
+    );
+
+    console.log(`✅ OTP sent to ${email}`);
+    return res.status(200).json({ success: true, message: "OTP sent to your email." });
+  } catch (err) {
+    console.error("❌ OTP send error:", err.message);
+    return res.status(500).json({ success: false, message: "Failed to send OTP. Please try again." });
+  }
+});
+
+// ── POST /api/tenants/verify-email-otp ───────────────────────────────────────
+router.post("/verify-email-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const key   = (email || "").toLowerCase().trim();
+    const entry = emailOtpStore.get(key);
+
+    if (!entry) {
+      return res.status(400).json({ success: false, message: "OTP expired or not found. Please request a new one." });
+    }
+    if (Date.now() > entry.expiresAt) {
+      emailOtpStore.delete(key);
+      return res.status(400).json({ success: false, message: "OTP has expired. Please request a new one." });
+    }
+    if (entry.otp !== String(otp).trim()) {
+      return res.status(400).json({ success: false, message: "Incorrect OTP. Please try again." });
+    }
+
+    // Valid — delete used OTP
+    emailOtpStore.delete(key);
+    return res.status(200).json({ success: true, message: "Email verified successfully." });
+  } catch (err) {
+    console.error("❌ OTP verify error:", err.message);
+    return res.status(500).json({ success: false, message: "Verification failed. Please try again." });
+  }
+});
 
 // ── Cloudinary setup ──────────────────────────────────────────────────────────
 const CLD_CLOUD = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();

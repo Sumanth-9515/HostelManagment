@@ -308,7 +308,7 @@ function buildRoomAllocationSection(buildingDetails) {
 
   if (rows.length === 0) return "";
   return `
-    <div class="section-title">🏠 Room Allocation</div>
+    <div class="section-title">🏠 Room Allocated</div>
     <div class="info-card">
       <div class="info-card-header">
         <span class="info-card-header-icon">📋</span>
