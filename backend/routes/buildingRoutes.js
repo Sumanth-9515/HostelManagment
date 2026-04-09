@@ -1,6 +1,8 @@
 import express from "express";
 import Building from "../models/Building.js";
 import Tenant from "../models/Tenant.js";
+import User from "../models/User.js";
+import Plan from "../models/Plan.js";
 import jwt from "jsonwebtoken";
 import { logActivity } from "../utils/activityLogger.js";
 
@@ -18,6 +20,27 @@ const auth = (req, res, next) => {
 };
 
 const makeBeds = (shareType) => Array.from({ length: shareType }, (_, i) => ({ bedNumber: i + 1 }));
+
+// ── Helper: count ALL beds the user currently has across all buildings ─────────
+async function countUserTotalBeds(userId) {
+  const buildings = await Building.find({ owner: userId });
+  let total = 0;
+  for (const b of buildings) {
+    for (const f of b.floors) {
+      for (const r of f.rooms) {
+        total += r.beds.length;
+      }
+    }
+  }
+  return total;
+}
+
+// ── Helper: get plan bed limit for user ───────────────────────────────────────
+async function getUserBedLimit(userId) {
+  const user = await User.findById(userId).populate("plan");
+  if (!user || !user.plan) return null; // null = no plan info, skip check
+  return user.plan.beds;
+}
 
 // 1. CREATE BUILDING
 router.post("/", auth, async (req, res) => {
@@ -44,9 +67,23 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
+// 2b. GET PLAN BED USAGE (used by frontend to show remaining beds)
+router.get("/plan/bed-usage", auth, async (req, res) => {
+  try {
+    const bedLimit = await getUserBedLimit(req.user.id);
+    const usedBeds = await countUserTotalBeds(req.user.id);
+    res.json({
+      bedLimit: bedLimit ?? null,
+      usedBeds,
+      remainingBeds: bedLimit != null ? Math.max(0, bedLimit - usedBeds) : null,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
 // 3. OVERVIEW STATS
 router.get("/stats/overview", auth, async (req, res) => {
-  // ... (Your exact existing code, no logging needed for GET requests)
   try {
     const buildings = await Building.find({ owner: req.user.id });
     const tenants = await Tenant.find({ owner: req.user.id, status: "Active", buildingId: { $ne: null } });
@@ -88,7 +125,6 @@ router.get("/stats/overview", auth, async (req, res) => {
 
 // 4. SEARCH ROOM
 router.get("/search/room", auth, async (req, res) => {
-  // ... (Your exact existing code, no logging needed here)
   try {
     const { roomNumber } = req.query;
     if (!roomNumber) return res.status(400).json({ message: "roomNumber query param required." });
@@ -198,16 +234,35 @@ router.post("/:buildingId/floors", auth, async (req, res) => {
   }
 });
 
-// 9. ADD ROOM
+// 9. ADD ROOM  ── with plan bed-limit check ────────────────────────────────────
 router.post("/:buildingId/floors/:floorId/rooms", auth, async (req, res) => {
   try {
     const { roomNumber, shareType } = req.body;
     if (!roomNumber || !shareType) return res.status(400).json({ message: "roomNumber and shareType are required." });
+
+    const newBedCount = Number(shareType);
+
+    // ── Plan bed limit check ──────────────────────────────────────────────────
+    const bedLimit = await getUserBedLimit(req.user.id);
+    if (bedLimit != null) {
+      const usedBeds = await countUserTotalBeds(req.user.id);
+      if (usedBeds + newBedCount > bedLimit) {
+        return res.status(403).json({
+          message: `Plan limit exceeded. Your plan allows ${bedLimit} beds. You have ${usedBeds} beds and are trying to add ${newBedCount} more (total would be ${usedBeds + newBedCount}).`,
+          planLimitExceeded: true,
+          bedLimit,
+          usedBeds,
+          remainingBeds: Math.max(0, bedLimit - usedBeds),
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const building = await Building.findOne({ _id: req.params.buildingId, owner: req.user.id });
     if (!building) return res.status(404).json({ message: "Building not found." });
     const floor = building.floors.id(req.params.floorId);
     if (!floor) return res.status(404).json({ message: "Floor not found." });
-    floor.rooms.push({ roomNumber, shareType: Number(shareType), beds: makeBeds(Number(shareType)) });
+    floor.rooms.push({ roomNumber, shareType: newBedCount, beds: makeBeds(newBedCount) });
     await building.save();
     
     await logActivity(req.user.id, "CREATE", "Room", `Added Room ${roomNumber} (Share: ${shareType}) to ${building.buildingName}`);
@@ -294,7 +349,7 @@ router.delete("/:buildingId/floors/:floorId", auth, async (req, res) => {
   }
 });
 
-// 13. UPDATE ROOM
+// 13. UPDATE ROOM  ── with plan bed-limit check when adding beds ───────────────
 router.put("/:buildingId/floors/:floorId/rooms/:roomId", auth, async (req, res) => {
   try {
     const { roomNumber, shareType } = req.body;
@@ -322,7 +377,24 @@ router.put("/:buildingId/floors/:floorId/rooms/:roomId", auth, async (req, res) 
       const newShare = Number(shareType);
       if (newShare !== oldShare) {
         const currentCount = room.beds.length;
+
         if (newShare > currentCount) {
+          // ── Plan bed limit check (only when ADDING beds) ──────────────────
+          const bedsToAdd = newShare - currentCount;
+          const bedLimit = await getUserBedLimit(req.user.id);
+          if (bedLimit != null) {
+            const usedBeds = await countUserTotalBeds(req.user.id);
+            if (usedBeds + bedsToAdd > bedLimit) {
+              return res.status(403).json({
+                message: `Plan limit exceeded. Your plan allows ${bedLimit} beds. You have ${usedBeds} beds and are trying to add ${bedsToAdd} more (total would be ${usedBeds + bedsToAdd}).`,
+                planLimitExceeded: true,
+                bedLimit,
+                usedBeds,
+                remainingBeds: Math.max(0, bedLimit - usedBeds),
+              });
+            }
+          }
+          // ─────────────────────────────────────────────────────────────────
           // Add extra beds
           for (let i = currentCount + 1; i <= newShare; i++) {
             room.beds.push({ bedNumber: i });

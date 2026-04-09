@@ -4,6 +4,153 @@ import { useToast, Toast, Modal, Badge, Btn, inputStyle } from "../components/ui
 
 const SHARE_OPTIONS = [1, 2, 3, 4, 5, 6];
 
+// ─── Plan Limit Exceeded Popup ────────────────────────────────────────────────
+function PlanLimitModal({ open, onClose, bedLimit, usedBeds, remainingBeds }) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center p-4"
+      style={{ background: "rgba(15,23,42,0.6)", backdropFilter: "blur(6px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl animate-modalPop"
+        style={{ background: "#fff" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Red gradient header */}
+        <div className="px-6 pt-6 pb-5" style={{ background: "linear-gradient(135deg, #dc2626 0%, #9333ea 100%)" }}>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-2xl">🚫</div>
+            <div>
+              <h2 className="text-white font-bold text-lg leading-tight">Plan Limit Exceeded</h2>
+              <p className="text-red-200 text-xs mt-0.5">Bed limit reached for your current plan</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-6 space-y-4">
+          {/* Usage summary */}
+          <div className="rounded-xl bg-red-50 border border-red-200 p-4 space-y-3">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600 font-medium">Plan bed limit</span>
+              <span className="font-bold text-gray-800">{bedLimit} beds</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600 font-medium">Beds used</span>
+              <span className="font-bold text-red-600">{usedBeds} beds</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600 font-medium">Beds remaining</span>
+              <span className="font-bold text-red-600">{remainingBeds} beds</span>
+            </div>
+            {/* Progress bar */}
+            <div className="w-full bg-red-100 rounded-full h-2.5 overflow-hidden mt-1">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, (usedBeds / bedLimit) * 100)}%`,
+                  background: "linear-gradient(90deg, #ef4444, #dc2626)",
+                }}
+              />
+            </div>
+            <p className="text-xs text-center text-red-500 font-semibold">
+              {usedBeds >= bedLimit ? "100% capacity reached" : `${Math.round((usedBeds / bedLimit) * 100)}% used`}
+            </p>
+          </div>
+
+          {/* Message */}
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
+            <p className="text-sm text-amber-800 font-medium leading-relaxed">
+              📞 Please contact the support team to upgrade or extend your plan to add more beds.
+            </p>
+          </div>
+
+          {/* Actions */}
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl font-semibold text-sm text-white transition-all hover:shadow-lg"
+            style={{ background: "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)" }}
+          >
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Beds Remaining Banner ────────────────────────────────────────────────────
+function BedUsageBanner({ bedUsage }) {
+  if (!bedUsage || bedUsage.bedLimit == null) return null;
+  const { bedLimit, usedBeds, remainingBeds } = bedUsage;
+  const pct = Math.min(100, Math.round((usedBeds / bedLimit) * 100));
+  const isLow = remainingBeds <= Math.max(1, Math.floor(bedLimit * 0.1)); // ≤10% remaining
+  const isFull = remainingBeds === 0;
+
+  return (
+    <div
+      className={`mb-5 rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3 ${
+        isFull
+          ? "bg-red-50 border-red-200"
+          : isLow
+          ? "bg-amber-50 border-amber-200"
+          : "bg-blue-50 border-blue-200"
+      }`}
+    >
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div
+          className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${
+            isFull ? "bg-red-100" : isLow ? "bg-amber-100" : "bg-blue-100"
+          }`}
+        >
+          🛏️
+        </div>
+        <div className="min-w-0">
+          <p
+            className={`text-sm font-bold ${
+              isFull ? "text-red-700" : isLow ? "text-amber-700" : "text-blue-700"
+            }`}
+          >
+            {isFull
+              ? "Bed Limit Reached!"
+              : isLow
+              ? `Only ${remainingBeds} bed${remainingBeds === 1 ? "" : "s"} remaining`
+              : `${remainingBeds} bed${remainingBeds === 1 ? "" : "s"} remaining`}
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {usedBeds} of {bedLimit} beds used · Your plan: <span className="font-semibold">{bedLimit} bed limit</span>
+          </p>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="sm:w-40 flex-shrink-0">
+        <div className="flex justify-between text-xs mb-1">
+          <span className={isFull ? "text-red-600" : isLow ? "text-amber-600" : "text-blue-600"}>
+            {pct}% used
+          </span>
+          <span className="text-gray-400">{bedLimit} max</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${pct}%`,
+              background: isFull
+                ? "linear-gradient(90deg, #ef4444, #dc2626)"
+                : isLow
+                ? "linear-gradient(90deg, #f59e0b, #d97706)"
+                : "linear-gradient(90deg, #3b82f6, #7c3aed)",
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Styled Form Modal ────────────────────────────────────────────────────────
 function FormModal({ open, onClose, title, subtitle, icon, children }) {
   if (!open) return null;
@@ -321,7 +468,8 @@ function RoomModal({ floor, rooms, onSelectRoom, onAddRoom, onEditRoom, onDelete
 }
 
 // ─── Bed Details Modal ────────────────────────────────────────────────────────
-function BedDetailsModal({ room, onSelectBed, onAddBed, onRemoveBed, onClose }) {
+function BedDetailsModal({ room, onSelectBed, onAddBed, onRemoveBed, onClose, bedUsage }) {
+  const isBedLimitFull = bedUsage && bedUsage.bedLimit != null && bedUsage.remainingBeds === 0;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-slideUp" onClick={(e) => e.stopPropagation()}>
@@ -333,14 +481,38 @@ function BedDetailsModal({ room, onSelectBed, onAddBed, onRemoveBed, onClose }) 
           <div className="flex gap-2 items-center">
             <button
               onClick={onAddBed}
-              title="Add a bed"
-              className="px-3 py-1.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl text-sm font-semibold hover:shadow-md transition-all flex items-center gap-1"
+              title={isBedLimitFull ? "Plan bed limit reached" : "Add a bed"}
+              className={`px-3 py-1.5 rounded-xl text-sm font-semibold transition-all flex items-center gap-1 ${
+                isBedLimitFull
+                  ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  : "bg-gradient-to-r from-green-500 to-green-600 text-white hover:shadow-md"
+              }`}
             >
               <span>+</span> Add Bed
+              {isBedLimitFull && <span className="text-xs ml-1">🚫</span>}
             </button>
             <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">✕</button>
           </div>
         </div>
+
+        {/* Inline beds-remaining pill inside BedDetailsModal */}
+        {bedUsage && bedUsage.bedLimit != null && (
+          <div className={`mx-6 mt-4 px-4 py-2 rounded-xl text-sm font-medium flex items-center justify-between ${
+            isBedLimitFull
+              ? "bg-red-50 border border-red-200 text-red-700"
+              : bedUsage.remainingBeds <= Math.max(1, Math.floor(bedUsage.bedLimit * 0.1))
+              ? "bg-amber-50 border border-amber-200 text-amber-700"
+              : "bg-green-50 border border-green-200 text-green-700"
+          }`}>
+            <span>
+              {isBedLimitFull
+                ? "⛔ Plan bed limit reached — contact support to upgrade"
+                : `🛏️ ${bedUsage.remainingBeds} bed${bedUsage.remainingBeds === 1 ? "" : "s"} remaining in your plan`}
+            </span>
+            <span className="text-xs opacity-70">{bedUsage.usedBeds}/{bedUsage.bedLimit}</span>
+          </div>
+        )}
+
         <div className="p-6">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {room.beds.map((bed) => (
@@ -515,8 +687,36 @@ export default function AddHostel() {
   const [showFModal, setShowFModal] = useState(false);
   const [showRModal, setShowRModal] = useState(false);
   const [editBuilding, setEditBuilding] = useState(null);
-  const [editFloor, setEditFloor] = useState(null);   // null = add mode, object = edit mode
-  const [editRoom, setEditRoom] = useState(null);     // null = add mode, object = edit mode
+  const [editFloor, setEditFloor] = useState(null);
+  const [editRoom, setEditRoom] = useState(null);
+
+  // ── Plan bed usage state ──────────────────────────────────────────────────
+  const [bedUsage, setBedUsage] = useState(null); // { bedLimit, usedBeds, remainingBeds }
+  const [showPlanLimitModal, setShowPlanLimitModal] = useState(false);
+  const [planLimitInfo, setPlanLimitInfo] = useState({ bedLimit: 0, usedBeds: 0, remainingBeds: 0 });
+
+  // ── Fetch bed usage from backend ─────────────────────────────────────────
+  const fetchBedUsage = async () => {
+    try {
+      const r = await fetch(`${API}/buildings/plan/bed-usage`, { headers: authHeaders() });
+      if (r.ok) {
+        const d = await r.json();
+        setBedUsage(d);
+      }
+    } catch (err) {
+      console.error("Failed to fetch bed usage:", err);
+    }
+  };
+
+  // ── Helper: show plan limit popup from a 403 planLimitExceeded response ──
+  const handlePlanLimitError = (d) => {
+    setPlanLimitInfo({
+      bedLimit: d.bedLimit ?? bedUsage?.bedLimit ?? 0,
+      usedBeds: d.usedBeds ?? bedUsage?.usedBeds ?? 0,
+      remainingBeds: d.remainingBeds ?? bedUsage?.remainingBeds ?? 0,
+    });
+    setShowPlanLimitModal(true);
+  };
 
   // ── Helpers ──
   const computeStats = (buildingsData, filterBuilding = null) => {
@@ -554,7 +754,10 @@ export default function AddHostel() {
     return buildingsData;
   };
 
-  useEffect(() => { fetchBuildings(); }, []);
+  useEffect(() => {
+    fetchBuildings();
+    fetchBedUsage();
+  }, []);
 
   // ── Card click (NOT "Open Building") → select + update stats only ──
   const handleCardClick = (building) => {
@@ -599,13 +802,11 @@ export default function AddHostel() {
         const tenant = await r.json();
         if (r.ok) { 
           setSelectedTenant(tenant); 
-          // Removed `setPopupStack([])` so the current stack remains intact behind tenant details
         }
       } catch (error) { console.error("Error fetching tenant:", error); }
     }
   };
 
-  // Gracefully step back through the modal stack instead of immediately clearing it
   const closePopup = () => setPopupStack(prev => prev.slice(0, -1));
 
   // ── Helper: refresh state automatically without glitching the popups ──
@@ -615,6 +816,7 @@ export default function AddHostel() {
     if (freshBuilding) {
       setSelectedBuilding(freshBuilding);
     }
+    await fetchBedUsage();
   };
 
   const refreshAndReopenRooms = async () => {
@@ -627,6 +829,7 @@ export default function AddHostel() {
         setSelectedFloor(freshFloor);
       }
     }
+    await fetchBedUsage();
   };
 
   const refreshAndReopenBeds = async () => {
@@ -643,6 +846,7 @@ export default function AddHostel() {
         }
       }
     }
+    await fetchBedUsage();
   };
 
   // ── CRUD: Building ──
@@ -668,6 +872,7 @@ export default function AddHostel() {
       setPopupStack([]);
     }
     fetchBuildings();
+    fetchBedUsage();
   };
 
   // ── CRUD: Floor ──
@@ -723,7 +928,15 @@ export default function AddHostel() {
     }
 
     const d = await r.json();
-    if (!r.ok) return show(d.message, "error");
+    if (!r.ok) {
+      // ── Plan limit exceeded → show popup ──
+      if (d.planLimitExceeded) {
+        setShowRModal(false);
+        handlePlanLimitError(d);
+        return;
+      }
+      return show(d.message, "error");
+    }
     show(editRoom ? "Room updated" : "Room added");
     setRForm({ roomNumber: "", shareType: "2" }); setEditRoom(null); setShowRModal(false);
     await refreshAndReopenRooms();
@@ -742,13 +955,29 @@ export default function AddHostel() {
 
   // ── CRUD: Beds (via room shareType) ──
   const handleAddBed = async () => {
+    // ── Client-side pre-check before hitting API ──
+    if (bedUsage && bedUsage.bedLimit != null && bedUsage.remainingBeds === 0) {
+      handlePlanLimitError({
+        bedLimit: bedUsage.bedLimit,
+        usedBeds: bedUsage.usedBeds,
+        remainingBeds: 0,
+      });
+      return;
+    }
+
     const newShareType = selectedRoom.beds.length + 1;
     const r = await fetch(`${API}/buildings/${selectedBuilding._id}/floors/${selectedFloor._id}/rooms/${selectedRoom._id}`, {
       method: "PUT", headers: authHeaders(),
       body: JSON.stringify({ roomNumber: selectedRoom.roomNumber, shareType: newShareType }),
     });
     const d = await r.json();
-    if (!r.ok) return show(d.message, "error");
+    if (!r.ok) {
+      if (d.planLimitExceeded) {
+        handlePlanLimitError(d);
+        return;
+      }
+      return show(d.message, "error");
+    }
     show("Bed added");
     await refreshAndReopenBeds();
   };
@@ -773,6 +1002,15 @@ export default function AddHostel() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <Toast toast={toast} />
 
+      {/* Plan Limit Exceeded Popup */}
+      <PlanLimitModal
+        open={showPlanLimitModal}
+        onClose={() => setShowPlanLimitModal(false)}
+        bedLimit={planLimitInfo.bedLimit}
+        usedBeds={planLimitInfo.usedBeds}
+        remainingBeds={planLimitInfo.remainingBeds}
+      />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
@@ -788,6 +1026,9 @@ export default function AddHostel() {
           + New Building
         </button>
       </div>
+
+      {/* Bed Usage Banner — always visible if plan has a limit */}
+      <BedUsageBanner bedUsage={bedUsage} />
 
       {/* Stats */}
       <StatsCards stats={stats} selectedBuilding={selectedBuilding} />
@@ -981,6 +1222,12 @@ export default function AddHostel() {
               {editRoom && Number(rForm.shareType) < editRoom.beds.filter(b => b.status === "Occupied").length && (
                 <p className="text-xs text-red-500 mt-2">⚠️ You cannot reduce below the number of occupied beds.</p>
               )}
+              {/* Warn if selected share type exceeds remaining bed quota */}
+              {!editRoom && bedUsage && bedUsage.bedLimit != null && Number(rForm.shareType) > bedUsage.remainingBeds && (
+                <p className="text-xs text-red-500 mt-2">
+                  ⚠️ This room needs {rForm.shareType} beds but you only have {bedUsage.remainingBeds} bed{bedUsage.remainingBeds === 1 ? "" : "s"} remaining in your plan.
+                </p>
+              )}
             </div>
             <FormActions
               onCancel={() => { setShowRModal(false); setEditRoom(null); }}
@@ -1029,6 +1276,7 @@ export default function AddHostel() {
           onAddBed={handleAddBed}
           onRemoveBed={handleRemoveBed}
           onClose={closePopup}
+          bedUsage={bedUsage}
         />
       )}
 
