@@ -10,7 +10,7 @@ import Plan from "./models/Plan.js";
 import buildingRoutes from "./routes/buildingRoutes.js";
 import tenantRoutes from "./routes/tenantRoutes.js";
 import masterRoutes from "./routes/masterRoutes.js";
-import rentRoutes from "./routes/Rentroutes.js";
+import rentRoutes from "./routes/rentroutes.js";
 import activityRoutes from "./routes/activityRoutes.js";
 import planRoutes from "./routes/planroutes.js";
 import approvalRoutes from "./routes/approvalRoutes.js";
