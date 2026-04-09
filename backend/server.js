@@ -13,7 +13,7 @@ import masterRoutes from "./routes/masterRoutes.js";
 import rentRoutes from "./routes/rentroutes.js";
 import activityRoutes from "./routes/activityRoutes.js";
 import planRoutes from "./routes/planroutes.js";
-import approvalRoutes from "./routes/approvalRoutes.js";
+import approvalRoutes from "./routes/approvalroutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
