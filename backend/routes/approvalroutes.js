@@ -75,6 +75,12 @@ router.patch("/:id/approve", masterAuth, async (req, res) => {
       user.planExpiresAt   = addDays(now, newPlan.days);  // fresh expiry from approval date
       user.planStatus      = "active";
       user.loginStatus     = "active";
+
+      // ── Accumulate bed limit: add new plan's beds on top of existing total ──
+      const currentBeds = user.planBeds ?? 0;
+      user.planBeds = currentBeds + newPlan.beds;
+      // ────────────────────────────────────────────────────────────────────────
+
       user.extensionRequest = {
         requested: false, planId: null, planName: null,
         planPrice: null, planDays: null, requestedAt: null,
@@ -90,6 +96,9 @@ router.patch("/:id/approve", masterAuth, async (req, res) => {
 
       if (plan) {
         user.planExpiresAt = addDays(now, plan.days);
+        // ── Set initial bed limit from the approved plan ──────────────────────
+        user.planBeds = plan.beds;
+        // ─────────────────────────────────────────────────────────────────────
       }
     }
 
