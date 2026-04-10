@@ -36,10 +36,20 @@ async function countUserTotalBeds(userId) {
 }
 
 // ── Helper: get plan bed limit for user ───────────────────────────────────────
+// Reads user.planBeds — the accumulated bed limit that increases on each
+// approved extension. Falls back to user.plan.beds for legacy users who
+// registered before planBeds was introduced.
 async function getUserBedLimit(userId) {
   const user = await User.findById(userId).populate("plan");
-  if (!user || !user.plan) return null; // null = no plan info, skip check
-  return user.plan.beds;
+  if (!user) return null;
+
+  // Primary: use the accumulated planBeds field (set/incremented by approvalroutes)
+  if (user.planBeds != null) return user.planBeds;
+
+  // Fallback for existing users who don't have planBeds set yet
+  if (user.plan) return user.plan.beds;
+
+  return null; // null = no plan info, skip check
 }
 
 // 1. CREATE BUILDING

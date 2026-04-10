@@ -88,6 +88,7 @@ app.post("/api/register", async (req, res) => {
     let planActivatedAt  = null;
     let planExpiresAt    = null;
     let usedFreePlan     = false;
+    let planBeds         = null; // ← accumulated bed limit
 
     if (planId) {
       const plan = await Plan.findById(planId);
@@ -103,10 +104,12 @@ app.post("/api/register", async (req, res) => {
         planStatus      = "active";
         planActivatedAt = new Date();
         planExpiresAt   = addDays(planActivatedAt, plan.days);
+        planBeds        = plan.beds; // ← set bed limit immediately for free plan
       } else {
-        // Paid plan → pending approval; dates set when master approves
+        // Paid plan → pending approval; planBeds set when master approves
         loginStatus = "pending";
         planStatus  = "none";
+        planBeds    = null;
       }
     }
 
@@ -126,6 +129,7 @@ app.post("/api/register", async (req, res) => {
       planExpiresAt,
       planRenewalAt:   null,
       usedFreePlan,
+      planBeds,        // ← persisted on the user document
     });
 
     await user.save();
@@ -161,6 +165,7 @@ app.post("/api/register", async (req, res) => {
         planExpiresAt:   user.planExpiresAt,
         planRenewalAt:   user.planRenewalAt,
         usedFreePlan:    user.usedFreePlan,
+        planBeds:        user.planBeds,
       },
     });
   } catch (err) {
@@ -282,6 +287,7 @@ app.post("/api/login", async (req, res) => {
         planExpiresAt:   user.planExpiresAt,
         planRenewalAt:   user.planRenewalAt,
         usedFreePlan:    user.usedFreePlan,
+        planBeds:        user.planBeds,
       },
     });
   } catch (err) {

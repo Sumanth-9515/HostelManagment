@@ -1168,25 +1168,29 @@ function BulkMailModal({
   );
 }
 
-// ─── Location Filter Dropdown ─────────────────────────────────────────────────
+// ─── Location Filter Dropdown (UPDATED to work with all tenants across pages) ──
 function LocationFilter({ dueItems, onFilterChange }) {
   const [selectedBuilding, setSelectedBuilding] = useState("");
   const [selectedFloor,    setSelectedFloor]    = useState("");
   const [selectedRoom,     setSelectedRoom]     = useState("");
 
-  // Derive unique buildings from current due items
-  const buildings = Array.from(
-    new Map(
-      dueItems
-        .filter((i) => i.tenant?.allocationInfo?.buildingName)
-        .map((i) => [
-          i.tenant.allocationInfo.buildingName,
-          { name: i.tenant.allocationInfo.buildingName }
-        ])
-    ).values()
-  ).sort((a, b) => a.name.localeCompare(b.name));
+  // Derive unique buildings from ALL due items (not just current page)
+// Derive unique buildings from ALL due items - ensure all buildings are included
+const buildings = Array.from(
+  new Map(
+    dueItems
+      .filter((i) => i.tenant?.allocationInfo?.buildingName)
+      .map((i) => [
+        i.tenant.allocationInfo.buildingName,
+        { name: i.tenant.allocationInfo.buildingName }
+      ])
+  ).values()
+).sort((a, b) => a.name.localeCompare(b.name));
 
-  // Derive floors for selected building
+// Debug log to check what buildings are found
+console.log("Buildings found in filter:", buildings.map(b => b.name));
+
+  // Derive floors for selected building from ALL due items
   const floors = selectedBuilding
     ? Array.from(
         new Map(
@@ -1204,7 +1208,7 @@ function LocationFilter({ dueItems, onFilterChange }) {
       ).sort((a, b) => a.number - b.number)
     : [];
 
-  // Derive rooms for selected building + floor
+  // Derive rooms for selected building + floor from ALL due items
   const rooms = selectedBuilding && selectedFloor !== ""
     ? Array.from(
         new Map(
@@ -1333,7 +1337,7 @@ function LocationFilter({ dueItems, onFilterChange }) {
         </button>
       )}
 
-      {/* Active filter summary badge */}
+      {/* Active filter summary badge with count */}
       {hasAnyFilter && (
         <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full font-medium">
           {selectedRoom
@@ -1411,17 +1415,56 @@ export default function RentManagement() {
 
   // All due items across all pages for filter options (fetched once, unbounded)
   const [allDueItemsForFilter, setAllDueItemsForFilter] = useState([]);
+  const [filterLoading, setFilterLoading] = useState(true);
 
-  // Fetch all items once for filter dropdown population
+  // Fetch all items once for filter dropdown population (get all tenants across all pages)
+const fetchAllDueItems = useCallback(async () => {
+  setFilterLoading(true); // Start loading
+  try {
+    console.log("Fetching all due items from all pages...");
+    let allData = [];
+    let currentPage = 1;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const r = await fetch(`${API}/rent/due?page=${currentPage}&limit=100`, { headers: authHeader() });
+      const d = await r.json();
+      console.log(`Page ${currentPage} fetched:`, d.data?.length || 0, "items");
+      if (d.data && d.data.length > 0) {
+        allData = [...allData, ...d.data];
+        currentPage++;
+        hasMore = currentPage <= d.totalPages;
+      } else {
+        hasMore = false;
+      }
+    }
+    
+    console.log("Total items fetched across all pages:", allData.length);
+    // Log unique rooms found
+    const rooms = new Set();
+    allData.forEach(item => {
+      if (item.tenant?.allocationInfo?.roomNumber) {
+        rooms.add(item.tenant.allocationInfo.roomNumber);
+      }
+    });
+    console.log("Unique rooms with dues:", Array.from(rooms).sort());
+    
+    if (allData.length > 0) {
+      setAllDueItemsForFilter(allData);
+      return allData;
+    }
+    return [];
+  } catch (error) {
+    console.error("Error fetching all due items:", error);
+    return [];
+  } finally {
+    setFilterLoading(false); // End loading
+  }
+}, []);
+
   useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${API}/rent/due?page=1&limit=500`, { headers: authHeader() });
-        const d = await r.json();
-        if (d.data) setAllDueItemsForFilter(d.data);
-      } catch {}
-    })();
-  }, [paymentDone]);
+    fetchAllDueItems();
+  }, [paymentDone, fetchAllDueItems]);
 
   const loadDuePage = useCallback(async (pageNum = 1) => {
     setDueLoading(true);
@@ -1478,6 +1521,8 @@ export default function RentManagement() {
     setPayModal(null);
     setToast(data.message || "Payment recorded!");
     setPaymentDone((n) => n + 1);
+    // Refresh the all due items for filter after payment
+    fetchAllDueItems();
     if (searchQuery.trim()) {
       clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = setTimeout(async () => {
@@ -1494,9 +1539,10 @@ export default function RentManagement() {
     setToast("Tenant updated successfully!");
     setPaymentDone((n) => n + 1);
     loadDuePage(page);
+    fetchAllDueItems();
   };
 
-  // ── Apply location filter to items ────────────────────────────────────────
+  // ── Apply location filter to items (this now works on ALL items from allDueItemsForFilter) ──
   const applyLocationFilter = (items) => {
     const { building, floor, room } = locationFilter;
     if (!building && !floor && !room) return items;
@@ -1509,28 +1555,36 @@ export default function RentManagement() {
     });
   };
 
-const isSearchMode     = searchResults !== null;
+  // Get filtered items from the complete dataset (all pages)
+  const getFilteredItems = useCallback(() => {
+    if (!locationFilter.building && !locationFilter.floor && !locationFilter.room) {
+      return null; // No filter active
+    }
+    return applyLocationFilter(allDueItemsForFilter);
+  }, [locationFilter, allDueItemsForFilter]);
+
+  const filteredItems = getFilteredItems();
+  const isSearchMode     = searchResults !== null;
   const isFilterMode     = !!(locationFilter.building || locationFilter.floor || locationFilter.room);
   const statsLoading     = dueLoading && dueItems.length === 0;
 
-  // FIX: Determine which source to use
-  let sourceItems = [];
+  // Base items: search results, filtered items (from all pages), or paginated due items
+  let baseItems;
   if (isSearchMode) {
-    // If searching, use search results
-    sourceItems = searchResults || [];
-  } else if (isFilterMode) {
-    // If filtering by location, use the FULL list (all 500 possible items)
-    sourceItems = allDueItemsForFilter;
+    baseItems = searchResults || [];
+  } else if (isFilterMode && filteredItems) {
+    baseItems = filteredItems;
   } else {
-    // Otherwise, use the standard paginated list (10 items)
-    sourceItems = dueItems;
+    baseItems = dueItems;
   }
 
-  // Apply the location filter logic to the chosen source
-  const displayItems = isFilterMode ? applyLocationFilter(sourceItems) : sourceItems;
+  const displayItems = baseItems;
 
-  // For filter dropdown, use all due items (not just current page)
+  // For filter dropdown, use all due items across all pages
   const filterSourceItems = isSearchMode ? (searchResults || []) : allDueItemsForFilter;
+
+  // Get the count of filtered results (for display)
+  const filteredCount = isFilterMode && filteredItems ? filteredItems.length : 0;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
@@ -1641,26 +1695,41 @@ const isSearchMode     = searchResults !== null;
           </div>
 
           {/* ── Location Filter Row ── */}
-          {!isSearchMode && filterSourceItems.length > 0 && (
-            <div className="mb-4 p-3 rounded-2xl border border-gray-200 bg-white">
-              <div className="flex items-center gap-2 mb-2.5">
-                <span className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Filter by location</span>
-                {isFilterMode && (
-                  <span className="text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
-                    {applyLocationFilter(allDueItemsForFilter).length} result{applyLocationFilter(allDueItemsForFilter).length !== 1 ? "s" : ""}
-                  </span>
-                )}
-              </div>
-              <LocationFilter
-                dueItems={filterSourceItems}
-                onFilterChange={(f) => {
-                  setLocationFilter(f);
-                  // Reset to page 1 when filter changes
-                  setPage(1);
-                }}
-              />
-            </div>
-          )}
+     {/* ── Location Filter Row ── */}
+{/* Only show filter after data is loaded and we have filter source items */}
+{!dueLoading && !filterLoading && filterSourceItems.length > 0 && (
+  <div className="mb-4 p-3 rounded-2xl border border-gray-200 bg-white">
+    <div className="flex items-center gap-2 mb-2.5">
+      <span className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Filter by location</span>
+      {isFilterMode && (
+        <span className="text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+          {filteredCount} result{filteredCount !== 1 ? "s" : ""}
+        </span>
+      )}
+    </div>
+    <LocationFilter
+      dueItems={filterSourceItems}
+      onFilterChange={(f) => {
+        setLocationFilter(f);
+        setPage(1);
+      }}
+    />
+  </div>
+)}
+
+{/* Show loading skeleton for filter while data is being fetched */}
+{!dueLoading && filterLoading && (
+  <div className="mb-4 p-3 rounded-2xl border border-gray-200 bg-white">
+    <div className="flex items-center gap-2 mb-2.5">
+      <span className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Filter by location</span>
+    </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="h-10 w-32 bg-gray-100 rounded-xl animate-pulse"></div>
+      <div className="h-10 w-28 bg-gray-100 rounded-xl animate-pulse"></div>
+      <div className="h-10 w-28 bg-gray-100 rounded-xl animate-pulse"></div>
+    </div>
+  </div>
+)}
 
           {/* Search result label */}
           {isSearchMode && (
@@ -1683,15 +1752,13 @@ const isSearchMode     = searchResults !== null;
           )}
 
           {/* Filter result label when filter active but no search */}
-          {isFilterMode && !isSearchMode && (
+          {isFilterMode && !isSearchMode && filteredCount === 0 && (
             <div className="mb-3">
-              {displayItems.length === 0 ? (
-                <div className="w-full text-center py-10 rounded-2xl border border-gray-200 bg-white/60">
-                  <p className="text-3xl mb-2">🏠</p>
-                  <p className="text-gray-600 font-semibold text-sm">No tenants with dues in the selected location</p>
-                  <p className="text-gray-400 text-xs mt-1">Try selecting a different building, floor, or room.</p>
-                </div>
-              ) : null}
+              <div className="w-full text-center py-10 rounded-2xl border border-gray-200 bg-white/60">
+                <p className="text-3xl mb-2">🏠</p>
+                <p className="text-gray-600 font-semibold text-sm">No tenants with dues in the selected location</p>
+                <p className="text-gray-400 text-xs mt-1">Try selecting a different building, floor, or room.</p>
+              </div>
             </div>
           )}
 
@@ -1719,7 +1786,7 @@ const isSearchMode     = searchResults !== null;
             </>
           )}
 
-          {/* Pagination — only shown when NOT in search mode and NOT filtered (filter is client-side on full data) */}
+          {/* Pagination — only shown when NOT in search mode AND NOT in filter mode (filter shows all results from all pages) */}
           {!isSearchMode && !isFilterMode && (
             <Pagination
               page={page}
@@ -1735,7 +1802,7 @@ const isSearchMode     = searchResults !== null;
           {isFilterMode && !isSearchMode && displayItems.length > 0 && (
             <div className="mt-4 pt-4 border-t border-gray-200 text-center">
               <p className="text-gray-400 text-xs">
-                Showing <span className="font-semibold text-gray-700">{displayItems.length}</span> tenant{displayItems.length !== 1 ? "s" : ""} matching filter
+                Showing <span className="font-semibold text-gray-700">{displayItems.length}</span> tenant{displayItems.length !== 1 ? "s" : ""} matching filter (from all pages)
               </p>
             </div>
           )}

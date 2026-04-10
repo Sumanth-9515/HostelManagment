@@ -27,6 +27,12 @@ const userSchema = new mongoose.Schema(
     // ── Plan status ───────────────────────────────────────────────────────────
     planStatus: { type: String, enum: ["active", "expired", "none"], default: "none" },
 
+    // ── Accumulated bed limit ─────────────────────────────────────────────────
+    // On new registration/approval: set to plan.beds
+    // On extension approval: incremented by the new extension plan's beds
+    // This is the actual enforced bed limit used across buildingRoutes
+    planBeds: { type: Number, default: null },
+
     // Prevent re-using free trial on renewal
     usedFreePlan: { type: Boolean, default: false },
 
