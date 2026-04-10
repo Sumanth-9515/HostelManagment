@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, NavLink } from "react-router-dom";
 import { clearSession, getSession } from "./ui.jsx";
-import { API, authHeaders } from "../api.js"; // same folder as ui.jsx — adjust if needed
-// Import Icons
+import { API, authHeaders } from "../api.js";
 import {
   LayoutDashboard,
   Eye,
@@ -16,7 +15,12 @@ import {
   ChevronRight,
   Users,
   Bell,
-  Volume2  ,
+  Volume2,
+  User,
+  Pencil,
+  Check,
+  AlertCircle,
+  EyeOff,
 } from "lucide-react";
 
 const NAV = [
@@ -25,14 +29,14 @@ const NAV = [
   { to: "/addcandidate",       label: "Add Candidate",       icon: <UserPlus size={20} /> },
   { to: "/candidates",         label: "Total Candidates",    icon: <Users size={20} /> },
   { to: "/addhostel",          label: "Property Management", icon: <Building2 size={20} /> },
-  { to: "/overview",           label: "Buildings Overview",            icon: <Eye size={20} /> },
+  { to: "/overview",           label: "Buildings Overview",  icon: <Eye size={20} /> },
   { to: "/onboarding-manager", label: "Onboarding Manager",  icon: <UserPlus size={20} /> },
-  { to: "/activity-logs", label: "Activity Logs", icon: <Volume2 size={20} /> },
+  { to: "/activity-logs",      label: "Activity Logs",       icon: <Volume2 size={20} /> },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const BACKEND_URL   = API.replace(/\/api.*$/, "");
-const LAST_SEEN_KEY = "hosteliq_notif_last_seen"; // localStorage key for unread tracking
+const LAST_SEEN_KEY = "hosteliq_notif_last_seen";
 
 const docUrl = (src) => {
   if (!src) return null;
@@ -50,6 +54,14 @@ function timeAgo(dateStr) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+const fmtDate = (d) =>
+  d
+    ? new Date(d).toLocaleString("en-IN", {
+        day: "2-digit", month: "short", year: "numeric",
+        hour: "2-digit", minute: "2-digit",
+      })
+    : "—";
+
 // ─── Shared keyframe styles ───────────────────────────────────────────────────
 const GLOBAL_STYLES = `
   @keyframes notif-slide {
@@ -61,17 +73,534 @@ const GLOBAL_STYLES = `
     60% { transform: scale(1.3); }
     100%{ transform: scale(1); }
   }
+  @keyframes profile-in {
+    from { opacity:0; transform:translateY(20px) scale(0.96); }
+    to   { opacity:1; transform:translateY(0) scale(1); }
+  }
   .notif-item:hover { background: #f8fafc !important; cursor: default; }
   .notif-scrollable::-webkit-scrollbar { width: 4px; }
   .notif-scrollable::-webkit-scrollbar-track { background: transparent; }
   .notif-scrollable::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  .profile-scrollable::-webkit-scrollbar { width: 5px; }
+  .profile-scrollable::-webkit-scrollbar-track { background: transparent; }
+  .profile-scrollable::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 `;
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ─── Profile Modal ────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+function ProfileModal({ onClose, onProfileUpdated }) {
+  const [profile, setProfile]   = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [fetchErr, setFetchErr] = useState("");
+  const [editMode, setEditMode] = useState(false);
+
+  // Edit form fields
+  const [form, setForm]       = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+  const [saveOk, setSaveOk]   = useState(false);
+
+  // Fetch profile from DB
+  const loadProfile = useCallback(async () => {
+    setLoading(true); setFetchErr("");
+    try {
+      const res = await fetch(`${API}/profile`, { headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) { setFetchErr(data.message || "Failed to load profile."); return; }
+      setProfile(data);
+      setForm({
+        name:     data.name    || "",
+        owner:    data.owner   || "",
+        email:    data.email   || "",
+        ph:       data.ph      || "",
+        address:  data.address || "",
+        password: "",
+      });
+    } catch {
+      setFetchErr("Network error. Could not load profile.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadProfile(); }, [loadProfile]);
+
+  // Close on Escape
+  useEffect(() => {
+    const h = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const handleSave = async () => {
+    setSaveErr(""); setSaveOk(false);
+    if (!form.name.trim() || !form.owner.trim() || !form.email.trim() || !form.ph.trim() || !form.address.trim()) {
+      setSaveErr("Name, owner, email, phone, and address are required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        name:    form.name.trim(),
+        owner:   form.owner.trim(),
+        email:   form.email.trim(),
+        ph:      form.ph.trim(),
+        address: form.address.trim(),
+      };
+      if (form.password.trim()) body.password = form.password.trim();
+
+      const res  = await fetch(`${API}/profile`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSaveErr(data.message || "Update failed."); return; }
+      setProfile(data.user);
+      setSaveOk(true);
+      setEditMode(false);
+      setForm(f => ({ ...f, password: "" }));
+      if (onProfileUpdated) onProfileUpdated(data.user);
+    } catch {
+      setSaveErr("Network error. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const planStatusColor = {
+    active:  { bg: "#ecfdf5", color: "#059669", border: "#bbf7d0" },
+    expired: { bg: "#fef2f2", color: "#dc2626", border: "#fecaca" },
+    none:    { bg: "#f1f5f9", color: "#64748b", border: "#e2e8f0" },
+  };
+  const psc = planStatusColor[profile?.planStatus] || planStatusColor.none;
+
+  const loginStatusColor = {
+    active:  { bg: "#ecfdf5", color: "#059669" },
+    blocked: { bg: "#fef2f2", color: "#dc2626" },
+    pending: { bg: "#fffbeb", color: "#d97706" },
+  };
+  const lsc = loginStatusColor[profile?.loginStatus] || loginStatusColor.active;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(15,23,42,0.5)",
+        backdropFilter: "blur(6px)",
+        zIndex: 9998,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "20px",
+      }}
+    >
+      <style>{GLOBAL_STYLES}</style>
+
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: 24,
+          width: "100%",
+          maxWidth: 560,
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 32px 80px rgba(0,0,0,0.22), 0 6px 24px rgba(0,0,0,0.1)",
+          animation: "profile-in 0.25s cubic-bezier(0.34,1.56,0.64,1)",
+          overflow: "hidden",
+        }}
+      >
+        {/* ── Top Banner / Avatar area ── */}
+        <div style={{
+          background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #1e40af 100%)",
+          padding: "28px 24px 20px",
+          position: "relative",
+          flexShrink: 0,
+        }}>
+          {/* Close btn */}
+          <button
+            onClick={onClose}
+            style={{
+              position: "absolute", top: 16, right: 16,
+              background: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "50%", width: 34, height: 34,
+              color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.22)"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
+          >✕</button>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {/* Avatar circle */}
+            <div style={{
+              width: 64, height: 64, borderRadius: "50%",
+              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 26, fontWeight: 800, color: "#fff",
+              border: "3px solid rgba(255,255,255,0.25)",
+              flexShrink: 0,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+            }}>
+              {profile?.name?.charAt(0)?.toUpperCase() || "?"}
+            </div>
+
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", letterSpacing: "-0.01em" }}>
+                {profile?.name || "Loading..."}
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>
+                {profile?.email || ""}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                {profile?.planStatus && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: "3px 10px",
+                    borderRadius: 99, background: psc.bg, color: psc.color,
+                    border: `1px solid ${psc.border}`,
+                  }}>
+                    {profile.planStatus === "active" ? "✅" : profile.planStatus === "expired" ? "⛔" : "📋"} Plan {profile.planStatus}
+                  </span>
+                )}
+                {profile?.loginStatus && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: "3px 10px",
+                    borderRadius: 99, background: lsc.bg, color: lsc.color,
+                    border: `1px solid ${lsc.color}22`,
+                  }}>
+                    Login: {profile.loginStatus}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Edit / Cancel toggle */}
+          {!loading && !fetchErr && (
+            <button
+              onClick={() => { setEditMode(v => !v); setSaveErr(""); setSaveOk(false); }}
+              style={{
+                position: "absolute", bottom: 16, right: 20,
+                background: editMode ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.12)",
+                border: `1px solid ${editMode ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.2)"}`,
+                borderRadius: 8, padding: "6px 14px",
+                color: editMode ? "#fca5a5" : "#fff",
+                fontSize: 12, fontWeight: 600, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 6,
+                transition: "all 0.18s",
+              }}
+            >
+              {editMode ? <><X size={13} /> Cancel Edit</> : <><Pencil size={13} /> Edit Profile</>}
+            </button>
+          )}
+        </div>
+
+        {/* ── Body ── */}
+        <div
+          className="profile-scrollable"
+          style={{ overflowY: "auto", flex: 1, padding: "20px 24px 24px" }}
+        >
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
+              <div style={{
+                width: 36, height: 36, border: "3px solid #e2e8f0",
+                borderTopColor: "#6366f1", borderRadius: "50%",
+                animation: "notif-slide 0.8s linear infinite",
+                margin: "0 auto 12px",
+              }} />
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>Loading profile...</div>
+            </div>
+          ) : fetchErr ? (
+            <div style={{
+              background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12,
+              padding: "14px 16px", color: "#dc2626", fontSize: 13,
+              display: "flex", gap: 8, alignItems: "center",
+            }}>
+              <AlertCircle size={16} /> {fetchErr}
+            </div>
+          ) : editMode ? (
+            /* ──────────── EDIT MODE ──────────── */
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>
+                ✏️ Edit Your Profile
+              </div>
+
+              {[
+                { label: "Full Name",     field: "name",    type: "text",     placeholder: "Your full name" },
+                { label: "Owner / Brand", field: "owner",   type: "text",     placeholder: "Hostel / brand name" },
+                { label: "Email",         field: "email",   type: "email",    placeholder: "you@example.com" },
+                { label: "Phone Number",  field: "ph",      type: "tel",      placeholder: "+91 XXXXX XXXXX" },
+                { label: "Address",       field: "address", type: "textarea", placeholder: "Full address" },
+{ label: "New Password",  field: "password", type: showPassword ? "text" : "password", placeholder: "Leave blank to keep unchanged" },
+              ].map(({ label, field, type, placeholder }) => (
+                <div key={field} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {label}
+                  </label>
+                  {type === "textarea" ? (
+                    <textarea
+                      rows={3}
+                      value={form[field]}
+                      onChange={(e) => setForm(f => ({ ...f, [field]: e.target.value }))}
+                      placeholder={placeholder}
+                      style={{
+                        border: "1.5px solid #e2e8f0", borderRadius: 10,
+                        padding: "10px 13px", fontSize: 13, color: "#1e293b",
+                        fontFamily: "inherit", resize: "vertical",
+                        background: "#fafafa", transition: "border-color 0.2s",
+                        outline: "none",
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = "#6366f1"}
+                      onBlur={(e) => e.target.style.borderColor = "#e2e8f0"}
+                    />
+                  ) : (
+                  <div style={{ position: "relative" }}>
+  <input
+    type={type}
+    value={form[field]}
+    onChange={(e) => setForm(f => ({ ...f, [field]: e.target.value }))}
+    placeholder={placeholder}
+    style={{
+      border: "1.5px solid #e2e8f0",
+      borderRadius: 10,
+      padding: "10px 40px 10px 13px",
+      fontSize: 13,
+      color: "#1e293b",
+      fontFamily: "inherit",
+      background: "#fafafa",
+      transition: "border-color 0.2s",
+      outline: "none",
+      width: "100%"
+    }}
+  />
+
+  {field === "password" && (
+    <button
+      type="button"
+      onClick={() => setShowPassword(!showPassword)}
+      style={{
+        position: "absolute",
+        right: 10,
+        top: "50%",
+        transform: "translateY(-50%)",
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        color: "#64748b"
+      }}
+    >
+      {showPassword ? <Eye size={16}/> : <EyeOff size={16}/>}
+    </button>
+  )}
+</div>
+                  )}
+                </div>
+              ))}
+
+              {saveErr && (
+                <div style={{
+                  background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10,
+                  padding: "10px 14px", color: "#dc2626", fontSize: 12,
+                  display: "flex", gap: 7, alignItems: "center",
+                }}>
+                  <AlertCircle size={14} /> {saveErr}
+                </div>
+              )}
+
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                style={{
+                  background: saving ? "#a5b4fc" : "linear-gradient(135deg,#6366f1,#4f46e5)",
+                  border: "none", borderRadius: 12,
+                  padding: "12px 0", color: "#fff",
+                  fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  transition: "all 0.18s",
+                  boxShadow: "0 4px 14px rgba(99,102,241,0.35)",
+                }}
+              >
+                {saving ? (
+                  <>
+                    <span style={{
+                      width: 14, height: 14, border: "2px solid rgba(255,255,255,0.4)",
+                      borderTopColor: "#fff", borderRadius: "50%",
+                      animation: "notif-slide 0.7s linear infinite",
+                      display: "inline-block",
+                    }} />
+                    Saving...
+                  </>
+                ) : (
+                  <><Check size={15} /> Save Changes</>
+                )}
+              </button>
+            </div>
+          ) : (
+            /* ──────────── VIEW MODE ──────────── */
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+              {/* ── Personal Info ── */}
+              <section>
+                <div style={{
+                  fontSize: 10, fontWeight: 700, color: "#94a3b8",
+                  textTransform: "uppercase", letterSpacing: "0.08em",
+                  marginBottom: 12,
+                }}>👤 Personal Info</div>
+                <div style={{
+                  background: "#f8fafc", borderRadius: 14,
+                  border: "1px solid #e2e8f0", overflow: "hidden",
+                }}>
+                  {[
+                    { label: "Name",         value: profile?.name },
+                    { label: "Owner / Brand",value: profile?.owner },
+                    { label: "Email",        value: profile?.email },
+                    { label: "Phone",        value: profile?.ph },
+                    { label: "Address",      value: profile?.address },
+                    { label: "Role",         value: profile?.role },
+                  ].map(({ label, value }, i, arr) => (
+                    <div key={label} style={{
+                      display: "flex", alignItems: "flex-start",
+                      padding: "11px 16px",
+                      borderBottom: i < arr.length - 1 ? "1px solid #e2e8f0" : "none",
+                      gap: 12,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", width: 110, flexShrink: 0, paddingTop: 1 }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#1e293b", fontWeight: 500, flex: 1, wordBreak: "break-word" }}>
+                        {value || "—"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* ── Account Status ── */}
+              <section>
+                <div style={{
+                  fontSize: 10, fontWeight: 700, color: "#94a3b8",
+                  textTransform: "uppercase", letterSpacing: "0.08em",
+                  marginBottom: 12,
+                }}>🔐 Account Status</div>
+                <div style={{
+                  background: "#f8fafc", borderRadius: 14,
+                  border: "1px solid #e2e8f0", overflow: "hidden",
+                }}>
+                  {[
+                    {
+                      label: "Login Status",
+                      value: (
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: "3px 10px",
+                          borderRadius: 99, background: lsc.bg, color: lsc.color,
+                        }}>
+                          {profile?.loginStatus || "—"}
+                        </span>
+                      ),
+                    },
+                    {
+                      label: "Used Free Plan",
+                      value: profile?.usedFreePlan ? "✅ Yes" : "❌ No",
+                    },
+                  ].map(({ label, value }, i, arr) => (
+                    <div key={label} style={{
+                      display: "flex", alignItems: "center",
+                      padding: "11px 16px",
+                      borderBottom: i < arr.length - 1 ? "1px solid #e2e8f0" : "none",
+                      gap: 12,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", width: 110, flexShrink: 0 }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#1e293b", fontWeight: 500 }}>
+                        {value || "—"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* ── Plan Details ── */}
+              <section>
+                <div style={{
+                  fontSize: 10, fontWeight: 700, color: "#94a3b8",
+                  textTransform: "uppercase", letterSpacing: "0.08em",
+                  marginBottom: 12,
+                }}>📋 Plan Details</div>
+                <div style={{
+                  background: "#f8fafc", borderRadius: 14,
+                  border: "1px solid #e2e8f0", overflow: "hidden",
+                }}>
+                  {[
+                    { label: "Plan Name",    value: profile?.planName || "—" },
+                    {
+                      label: "Plan Status",
+                      value: (
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: "3px 10px",
+                          borderRadius: 99, background: psc.bg, color: psc.color,
+                          border: `1px solid ${psc.border}`,
+                        }}>
+                          {profile?.planStatus === "active" ? "✅ Active" : profile?.planStatus === "expired" ? "⛔ Expired" : "📋 None"}
+                        </span>
+                      ),
+                    },
+                    { label: "Plan Beds",    value: profile?.planBeds != null ? `🛏️ ${profile.planBeds} beds` : "—" },
+                    { label: "Activated At", value: fmtDate(profile?.planActivatedAt) },
+                    { label: "Expires At",   value: profile?.planExpiresAt
+                        ? <span style={{ color: new Date(profile.planExpiresAt) < new Date() ? "#dc2626" : "#059669", fontWeight: 600 }}>
+                            {fmtDate(profile.planExpiresAt)}
+                          </span>
+                        : "—"
+                    },
+                    { label: "Renewal At",   value: fmtDate(profile?.planRenewalAt) },
+                    { label: "Price",        value: profile?.plan?.price != null ? `₹${Number(profile.plan.price).toLocaleString("en-IN")}` : "—" },
+                    { label: "Duration",     value: profile?.plan?.days != null ? `${profile.plan.days} days` : "—" },
+                  ].map(({ label, value }, i, arr) => (
+                    <div key={label} style={{
+                      display: "flex", alignItems: "center",
+                      padding: "11px 16px",
+                      borderBottom: i < arr.length - 1 ? "1px solid #e2e8f0" : "none",
+                      gap: 12,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", width: 110, flexShrink: 0 }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#1e293b", fontWeight: 500 }}>
+                        {value || "—"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* ── Save OK toast ── */}
+              {saveOk && (
+                <div style={{
+                  background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 10,
+                  padding: "10px 14px", color: "#059669", fontSize: 12,
+                  display: "flex", gap: 7, alignItems: "center", fontWeight: 600,
+                }}>
+                  <Check size={14} /> Profile updated successfully!
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Notification Dropdown Component ─────────────────────────────────────────
 function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, isMobile, onCandidateClick }) {
   const dropRef = useRef(null);
 
-  // Close when clicking outside
   useEffect(() => {
     const handler = (e) => {
       if (
@@ -83,7 +612,6 @@ function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, 
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose, anchorRef]);
 
-  // Dynamic position — mobile: below navbar right, desktop: right of sidebar bell opening UPWARDS
   let posStyle;
   if (isMobile) {
     posStyle = { position: "fixed", top: 64, right: 12, left: "auto", width: "calc(100vw - 24px)", maxWidth: 380 };
@@ -91,7 +619,6 @@ function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, 
     const rect = anchorRef.current?.getBoundingClientRect();
     posStyle = {
       position: "fixed",
-      // Changed from top to bottom so it gracefully opens upwards from the bell and never cuts off
       bottom: rect ? (window.innerHeight - rect.bottom) : 20,
       left: rect ? rect.right + 12 : 260,
       width: 370,
@@ -174,7 +701,6 @@ function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, 
                 cursor: "pointer",
               }}
             >
-              {/* Unread indicator dot */}
               {t._isNew && (
                 <div style={{
                   position: "absolute", top: 15, right: 14,
@@ -184,7 +710,6 @@ function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, 
                 }} />
               )}
 
-              {/* Avatar */}
               <div style={{
                 width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
                 background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
@@ -195,18 +720,12 @@ function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, 
                 boxSizing: "border-box",
               }}>
                 {t.documents?.passportPhoto
-                  ? <img
-                      src={docUrl(t.documents.passportPhoto)}
-                      alt={t.name}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
+                  ? <img src={docUrl(t.documents.passportPhoto)} alt={t.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   : t.name?.charAt(0).toUpperCase()
                 }
               </div>
 
-              {/* Content */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                {/* Name + NEW badge */}
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                   <span style={{
                     fontWeight: t._isNew ? 700 : 600,
@@ -224,13 +743,11 @@ function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, 
                   )}
                 </div>
 
-                {/* Phone · email */}
                 <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
                   📱 {t.phone}
                   {t.email && <span style={{ marginLeft: 5, color: "#94a3b8" }}>· {t.email}</span>}
                 </div>
 
-                {/* Info chips */}
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
                   <span style={{ fontSize: 10, fontWeight: 600, color: "#4f46e5", background: "#eef2ff", padding: "2px 7px", borderRadius: 99 }}>
                     🗓 {t.joiningDate
@@ -250,21 +767,12 @@ function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, 
                     </span>
                   )}
                 </div>
-                {/* View more details */}
-<div
-  style={{
-    fontSize: 9,
-    color: "#2563eb",
-    marginTop: 6,
-    cursor: "pointer",
-    fontWeight: 600
-  }}
-  onClick={() => console.log("View details of:", t)}
->
-  👉 View more details
-</div>
-
-                {/* Timestamp */}
+                <div
+                  style={{ fontSize: 9, color: "#2563eb", marginTop: 6, cursor: "pointer", fontWeight: 600 }}
+                  onClick={() => console.log("View details of:", t)}
+                >
+                  👉 View more details
+                </div>
                 <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 5 }}>
                   Filled via onboarding form · {timeAgo(t.createdAt)}
                 </div>
@@ -274,7 +782,6 @@ function NotificationDropdown({ notifications, unreadCount, onClose, anchorRef, 
         )}
       </div>
 
-      {/* Footer link */}
       {notifications.length > 0 && (
         <div style={{ padding: "10px 16px", borderTop: "1px solid #e2e8f0", background: "#fafbff", flexShrink: 0 }}>
           <a
@@ -359,6 +866,9 @@ export default function Layout({ children }) {
   const [notifOpen,     setNotifOpen]     = useState(false);
   const bellRef = useRef(null);
 
+  // ── Profile modal state ─────────────────────────────────────────────────────
+  const [profileOpen, setProfileOpen] = useState(false);
+
   // Handle window resizing
   useEffect(() => {
     const handleResize = () => {
@@ -371,7 +881,7 @@ export default function Layout({ children }) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // ── Fetch using the EXISTING endpoint that already works ────────────────────
+  // ── Fetch notifications ─────────────────────────────────────────────────────
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch(`${API}/tenants?source=onboarding-link`, {
@@ -381,13 +891,11 @@ export default function Layout({ children }) {
       const data = await res.json();
       if (!Array.isArray(data)) return;
 
-      // Read last-seen timestamp from localStorage
       const lastSeen = (() => {
         try { return new Date(localStorage.getItem(LAST_SEEN_KEY) || 0).getTime(); }
         catch { return 0; }
       })();
 
-      // Tag each candidate as new or seen
       const enriched = data.map(t => ({
         ...t,
         _isNew: new Date(t.createdAt).getTime() > lastSeen,
@@ -400,10 +908,7 @@ export default function Layout({ children }) {
     }
   }, []);
 
-  // Poll every 20 s — gives near-real-time feel
   useEffect(() => {
-    // Only fetch/poll when notification window is CLOSED.
-    // This prevents background polls from erasing the "NEW" badges while the user is actively reading them.
     if (!notifOpen) {
       fetchNotifications();
       const id = setInterval(fetchNotifications, 20000);
@@ -413,17 +918,8 @@ export default function Layout({ children }) {
 
   // ── Mark all as read ────────────────────────────────────────────────────────
   const markAllRead = useCallback(async () => {
-    // PRIMARY: update localStorage timestamp — badge clears instantly
     try { localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString()); } catch {}
-    
-    // Clear unread bell count
-    setUnreadCount(0); 
-    
-    // NOTE: We INTENTIONALLY DO NOT clear `_isNew` from `notifications` here!
-    // This ensures that the "NEW" visual badge alongside the person's name 
-    // STAYS VISIBLE while the user has the dropdown open to read who is new.
-
-    // SECONDARY: also update isVerified in DB
+    setUnreadCount(0);
     try {
       await fetch(`${API}/tenants/mark-verified`, {
         method: "PATCH",
@@ -455,6 +951,7 @@ export default function Layout({ children }) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
+      <style>{GLOBAL_STYLES}</style>
 
       {/* ── MOBILE TOP BAR ─────────────────────────────────────────────────── */}
       {isMobile && (
@@ -466,12 +963,9 @@ export default function Layout({ children }) {
           <button onClick={toggleSidebar} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text)" }}>
             <Menu size={24} />
           </button>
-
           <div style={{ marginLeft: 16, fontWeight: 700, fontSize: 14, letterSpacing: "0.05em", flex: 1 }}>
             Nilayam
           </div>
-
-          {/* Bell — right of mobile navbar */}
           <button
             ref={bellRef}
             onClick={handleBellClick}
@@ -499,7 +993,6 @@ export default function Layout({ children }) {
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
-            <style>{GLOBAL_STYLES}</style>
           </button>
         </div>
       )}
@@ -590,14 +1083,89 @@ export default function Layout({ children }) {
           </>
         )}
 
-        {/* User + Logout */}
+        {/* ── User + Profile click + Logout ──────────────────────────────── */}
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8 }}>
-          {user && (isOpen || isMobile) && (
-            <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 10, padding: "0 8px" }}>
-              <div style={{ fontWeight: 600, color: "var(--text-2)", marginBottom: 1 }}>{user.owner}</div>
-              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
-            </div>
-          )}
+          {user && (isOpen || isMobile) ? (
+            /* Clickable profile row */
+            <button
+              onClick={() => setProfileOpen(true)}
+              title="View / Edit your profile"
+              style={{
+                width: "100%",
+                background: "var(--surface-2,#f8fafc)",
+                border: "1px solid var(--border,#e2e8f0)",
+                borderRadius: 10,
+                padding: "10px 10px",
+                marginBottom: 8,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                textAlign: "left",
+                transition: "all 0.18s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#eff6ff";
+                e.currentTarget.style.borderColor = "#bfdbfe";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--surface-2,#f8fafc)";
+                e.currentTarget.style.borderColor = "var(--border,#e2e8f0)";
+              }}
+            >
+              {/* Mini avatar */}
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontWeight: 700, fontSize: 13,
+              }}>
+                {user.owner?.charAt(0)?.toUpperCase() || user.name?.charAt(0)?.toUpperCase() || "?"}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontWeight: 600, fontSize: 12,
+                  color: "var(--text-2,#334155)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {user.owner || user.name}
+                </div>
+                <div style={{
+                  fontSize: 10, color: "var(--text-3,#94a3b8)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  marginTop: 1,
+                }}>
+                  {user.email}
+                </div>
+              </div>
+              <User size={14} style={{ color: "#94a3b8", flexShrink: 0 }} />
+            </button>
+          ) : user && !isOpen && !isMobile ? (
+            /* Collapsed — just icon */
+            <button
+              onClick={() => setProfileOpen(true)}
+              title="View / Edit your profile"
+              style={{
+                width: "100%", padding: "10px", marginBottom: 8,
+                background: "transparent", border: "none",
+                cursor: "pointer", display: "flex", justifyContent: "center",
+                borderRadius: "var(--radius)",
+                transition: "all 0.18s",
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "var(--surface-2,#f1f5f9)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+            >
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontWeight: 700, fontSize: 13,
+              }}>
+                {user.owner?.charAt(0)?.toUpperCase() || user.name?.charAt(0)?.toUpperCase() || "?"}
+              </div>
+            </button>
+          ) : null}
+
           <button
             onClick={handleLogout}
             style={{
@@ -632,6 +1200,17 @@ export default function Layout({ children }) {
           anchorRef={bellRef}
           isMobile={isMobile}
           onCandidateClick={handleCandidateClick}
+        />
+      )}
+
+      {/* ── PROFILE MODAL ──────────────────────────────────────────────────── */}
+      {profileOpen && (
+        <ProfileModal
+          onClose={() => setProfileOpen(false)}
+          onProfileUpdated={(updatedUser) => {
+            // Optionally refresh session display — session store update can be wired here
+            // if getSession/setSession supports it. For now the modal reflects DB truth.
+          }}
         />
       )}
     </div>

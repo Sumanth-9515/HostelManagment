@@ -77,6 +77,137 @@ function CountdownBadge({ expiresAt, planStatus }) {
   );
 }
 
+// ── Edit Plan Popup ───────────────────────────────────────────────────────────
+function EditPlanModal({ user, onClose, onSaved, token }) {
+  // Convert ISO date to datetime-local input format (YYYY-MM-DDTHH:mm)
+  const toInputVal = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const [expiresAt, setExpiresAt] = useState(toInputVal(user.planExpiresAt));
+  const [planBeds, setPlanBeds] = useState(user.planBeds ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+
+  const handleSave = async () => {
+    setErr("");
+    if (!expiresAt && planBeds === "") {
+      setErr("Please update at least one field.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {};
+      if (expiresAt) body.planExpiresAt = new Date(expiresAt).toISOString();
+      if (planBeds !== "") body.planBeds = Number(planBeds);
+
+      const res = await fetch(`${API}/approval/${user._id}/edit-plan`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErr(data.message || "Failed to update."); return; }
+      onSaved(data.user);
+      onClose();
+    } catch {
+      setErr("Network error. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">✏️ Edit Plan Fields</div>
+            <div className="modal-subtitle">{user.name} · {user.email}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Current values info */}
+        <div className="modal-info-row">
+          <div className="modal-info-item">
+            <span className="modal-info-label">Current Plan</span>
+            <span className="modal-info-value">📋 {user.planName || "—"}</span>
+          </div>
+          <div className="modal-info-item">
+            <span className="modal-info-label">Plan Status</span>
+            <span className="modal-info-value">{user.planStatus || "—"}</span>
+          </div>
+        </div>
+
+        {/* Fields */}
+        <div className="modal-fields">
+          {/* Plan Expires At */}
+          <div className="modal-field-group">
+            <label className="modal-label">
+              📅 Plan Expires At
+              <span className="modal-label-hint">
+                Current: {user.planExpiresAt
+                  ? new Date(user.planExpiresAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                  : "Not set"}
+              </span>
+            </label>
+            <input
+              type="datetime-local"
+              className="modal-input"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+            />
+          </div>
+
+          {/* Plan Beds */}
+          <div className="modal-field-group">
+            <label className="modal-label">
+              🛏️ Plan Beds (Limit)
+              <span className="modal-label-hint">
+                Current: {user.planBeds != null ? user.planBeds : "Not set"}
+              </span>
+            </label>
+            <input
+              type="number"
+              className="modal-input"
+              min="0"
+              placeholder="Enter bed count"
+              value={planBeds}
+              onChange={(e) => setPlanBeds(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Error */}
+        {err && (
+          <div className="modal-error">⚠️ {err}</div>
+        )}
+
+        {/* Actions */}
+        <div className="modal-actions">
+          <button className="modal-btn-cancel" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button className="modal-btn-save" onClick={handleSave} disabled={saving}>
+            {saving ? (
+              <span className="modal-saving">
+                <span className="modal-spinner" /> Saving...
+              </span>
+            ) : "💾 Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const fmt = (d) => d
   ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
   : "—";
@@ -100,6 +231,9 @@ export default function MasterPlanMonitor() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
 
+  // Edit modal state
+  const [editUser, setEditUser] = useState(null);
+
   const token = sessionStorage.getItem("token");
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
@@ -114,6 +248,13 @@ export default function MasterPlanMonitor() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // Called after successful save — update user in local state
+  const handleUserSaved = (updatedUser) => {
+    setUsers((prev) =>
+      prev.map((u) => (u._id === updatedUser._id ? { ...u, ...updatedUser } : u))
+    );
+  };
 
   const filtered = users.filter(u => {
     const s = search.toLowerCase();
@@ -131,19 +272,6 @@ export default function MasterPlanMonitor() {
     none: users.filter(u => u.planStatus === "none").length,
     pending: users.filter(u => u.loginStatus === "pending").length,
   };
-
-  // Table column definitions
-  const columns = [
-    { key: "S.No", label: "S.No", width: "w-12" },
-    { key: "user", label: "USER", width: "min-w-[200px]" },
-    { key: "plan", label: "PLAN", width: "min-w-[160px]" },
-    { key: "planStatus", label: "PLAN STATUS", width: "w-[120px]" },
-    { key: "loginStatus", label: "LOGIN STATUS", width: "w-[120px]" },
-    { key: "activatedAt", label: "ACTIVATED AT", width: "min-w-[160px]" },
-    { key: "expiresAt", label: "EXPIRES AT", width: "min-w-[160px]" },
-    { key: "renewalAt", label: "RENEWAL AT", width: "min-w-[160px]" },
-    { key: "timeRemaining", label: "TIME REMAINING", width: "min-w-[180px]" },
-  ];
 
   return (
     <div className="pm-container">
@@ -444,6 +572,261 @@ export default function MasterPlanMonitor() {
           background: #ffffff;
           border: 1px solid #e2e8f0;
         }
+
+        /* ── Edit Button ───────────────────────────────────────────────────── */
+        .edit-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 12px;
+          background: #f0fdf4;
+          border: 1px solid #bbf7d0;
+          border-radius: 20px;
+          font-size: 11px;
+          font-weight: 600;
+          color: #059669;
+          cursor: pointer;
+          transition: all 0.18s;
+          white-space: nowrap;
+          margin-top: 6px;
+        }
+
+        .edit-btn:hover {
+          background: #dcfce7;
+          border-color: #86efac;
+          color: #047857;
+          transform: translateY(-1px);
+          box-shadow: 0 3px 8px rgba(16,185,129,0.15);
+        }
+
+        /* ── Modal Overlay ─────────────────────────────────────────────────── */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.45);
+          backdrop-filter: blur(4px);
+          z-index: 9999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          animation: fadeIn 0.18s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+
+        .modal-box {
+          background: #ffffff;
+          border-radius: 24px;
+          width: 100%;
+          max-width: 460px;
+          box-shadow: 0 24px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.08);
+          animation: slideUp 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+          overflow: hidden;
+        }
+
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(24px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .modal-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          padding: 24px 24px 16px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+
+        .modal-title {
+          font-size: 17px;
+          font-weight: 700;
+          color: #0f172a;
+        }
+
+        .modal-subtitle {
+          font-size: 12px;
+          color: #64748b;
+          margin-top: 4px;
+        }
+
+        .modal-close {
+          background: #f1f5f9;
+          border: none;
+          border-radius: 50%;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          font-size: 13px;
+          color: #64748b;
+          transition: all 0.15s;
+          flex-shrink: 0;
+        }
+
+        .modal-close:hover {
+          background: #fee2e2;
+          color: #dc2626;
+        }
+
+        .modal-info-row {
+          display: flex;
+          gap: 12px;
+          padding: 14px 24px;
+          background: #f8fafc;
+          border-bottom: 1px solid #f1f5f9;
+        }
+
+        .modal-info-item {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          flex: 1;
+        }
+
+        .modal-info-label {
+          font-size: 10px;
+          font-weight: 600;
+          color: #94a3b8;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+
+        .modal-info-value {
+          font-size: 13px;
+          font-weight: 600;
+          color: #334155;
+        }
+
+        .modal-fields {
+          padding: 20px 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+        }
+
+        .modal-field-group {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .modal-label {
+          font-size: 13px;
+          font-weight: 600;
+          color: #374151;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .modal-label-hint {
+          font-size: 11px;
+          font-weight: 400;
+          color: #94a3b8;
+        }
+
+        .modal-input {
+          border: 1.5px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 10px 14px;
+          font-size: 14px;
+          color: #1e293b;
+          font-family: inherit;
+          transition: all 0.2s;
+          background: #fafafa;
+          width: 100%;
+        }
+
+        .modal-input:focus {
+          outline: none;
+          border-color: #10b981;
+          box-shadow: 0 0 0 3px rgba(16,185,129,0.1);
+          background: #fff;
+        }
+
+        .modal-error {
+          margin: 0 24px;
+          padding: 10px 14px;
+          background: #fef2f2;
+          border: 1px solid #fee2e2;
+          border-radius: 10px;
+          font-size: 13px;
+          color: #dc2626;
+        }
+
+        .modal-actions {
+          display: flex;
+          gap: 12px;
+          padding: 16px 24px 24px;
+          justify-content: flex-end;
+        }
+
+        .modal-btn-cancel {
+          padding: 10px 20px;
+          border: 1.5px solid #e2e8f0;
+          border-radius: 12px;
+          background: #fff;
+          color: #64748b;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s;
+          font-family: inherit;
+        }
+
+        .modal-btn-cancel:hover:not(:disabled) {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+
+        .modal-btn-save {
+          padding: 10px 24px;
+          background: linear-gradient(135deg, #10b981, #059669);
+          border: none;
+          border-radius: 12px;
+          color: #fff;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s;
+          font-family: inherit;
+          box-shadow: 0 2px 8px rgba(16,185,129,0.3);
+        }
+
+        .modal-btn-save:hover:not(:disabled) {
+          background: linear-gradient(135deg, #059669, #047857);
+          box-shadow: 0 4px 14px rgba(16,185,129,0.4);
+          transform: translateY(-1px);
+        }
+
+        .modal-btn-save:disabled,
+        .modal-btn-cancel:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .modal-saving {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .modal-spinner {
+          width: 14px;
+          height: 14px;
+          border: 2px solid rgba(255,255,255,0.4);
+          border-top-color: #fff;
+          border-radius: 50%;
+          animation: spin 0.7s linear infinite;
+          display: inline-block;
+        }
       `}</style>
 
       {/* Header */}
@@ -528,6 +911,7 @@ export default function MasterPlanMonitor() {
                 <th>EXPIRES AT</th>
                 <th>RENEWAL AT</th>
                 <th>TIME REMAINING</th>
+                <th>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
@@ -558,6 +942,11 @@ export default function MasterPlanMonitor() {
                           {user.plan?.price != null && (
                             <div className="plan-details">
                               ₹{user.plan.price.toLocaleString("en-IN")} · {user.plan?.days}d · {user.plan?.beds} beds
+                            </div>
+                          )}
+                          {user.planBeds != null && (
+                            <div className="plan-details" style={{ color: "#7c3aed" }}>
+                              🛏️ Limit: {user.planBeds} beds
                             </div>
                           )}
                         </div>
@@ -597,12 +986,32 @@ export default function MasterPlanMonitor() {
                     <td>
                       <CountdownBadge expiresAt={user.planExpiresAt} planStatus={user.planStatus} />
                     </td>
+                    {/* ── Actions column with Edit button ── */}
+                    <td>
+                      <button
+                        className="edit-btn"
+                        onClick={() => setEditUser(user)}
+                        title="Edit plan expiry and bed limit"
+                      >
+                        ✏️ Edit Plan
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ── Edit Plan Modal ── */}
+      {editUser && (
+        <EditPlanModal
+          user={editUser}
+          token={token}
+          onClose={() => setEditUser(null)}
+          onSaved={handleUserSaved}
+        />
       )}
     </div>
   );
