@@ -152,9 +152,9 @@ const ActivityLogs = () => {
         return;
       }
       const API_BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) 
-        || "http://localhost:5000";
+        || "http://localhost:5000/api";
       const res = await axios.get(
-        `${API_BASE_URL}/api/activities?page=${currentPage}&limit=20&entityType=${currentFilter}`,
+        `${API_BASE_URL}/activities?page=${currentPage}&limit=20&entityType=${currentFilter}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (reset) {
