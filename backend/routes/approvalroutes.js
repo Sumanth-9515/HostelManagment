@@ -54,6 +54,49 @@ router.get("/users-plan", masterAuth, async (req, res) => {
   }
 });
 
+// ── PATCH edit planExpiresAt and/or planBeds for a user (master only) ─────────
+router.patch("/:id/edit-plan", masterAuth, async (req, res) => {
+  try {
+    const { planExpiresAt, planBeds } = req.body;
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    // Validate and apply planExpiresAt if provided
+    if (planExpiresAt !== undefined && planExpiresAt !== null && planExpiresAt !== "") {
+      const parsed = new Date(planExpiresAt);
+      if (isNaN(parsed.getTime()))
+        return res.status(400).json({ message: "Invalid planExpiresAt date." });
+      user.planExpiresAt = parsed;
+
+      // Recalculate planStatus based on new expiry
+      const now = new Date();
+      if (parsed > now) {
+        user.planStatus = "active";
+        if (user.loginStatus === "blocked" && user.planStatus !== "active") {
+          // Only unblock if they were blocked due to expiry; leave other blocks alone
+        }
+      } else {
+        user.planStatus = "expired";
+      }
+    }
+
+    // Validate and apply planBeds if provided
+    if (planBeds !== undefined && planBeds !== null && planBeds !== "") {
+      const beds = Number(planBeds);
+      if (isNaN(beds) || beds < 0)
+        return res.status(400).json({ message: "Invalid planBeds value." });
+      user.planBeds = beds;
+    }
+
+    await user.save();
+    const saved = await User.findById(user._id).select("-password");
+    res.json({ message: "Plan updated successfully.", user: saved });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
 // ── PATCH approve ─────────────────────────────────────────────────────────────
 router.patch("/:id/approve", masterAuth, async (req, res) => {
   try {

@@ -67,6 +67,70 @@ function addDays(date, days) {
   return d;
 }
 
+// ── Auth middleware (any logged-in user) ──────────────────────────────────────
+function authMiddleware(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ message: "No token." });
+  try {
+    const decoded = jwt.verify(auth.split(" ")[1], process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ message: "Invalid token." });
+  }
+}
+
+// ── GET own profile ───────────────────────────────────────────────────────────
+app.get("/api/profile", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+      .select("-password")
+      .populate("plan", "name price days beds isFree");
+    if (!user) return res.status(404).json({ message: "User not found." });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
+// ── PATCH own profile (name, owner, email, ph, address, password) ─────────────
+app.patch("/api/profile", authMiddleware, async (req, res) => {
+  try {
+    const { name, owner, email, ph, address, password } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    // Check email uniqueness if changing
+    if (email && email.toLowerCase().trim() !== user.email) {
+      const exists = await User.findOne({ email: email.toLowerCase().trim() });
+      if (exists) return res.status(400).json({ message: "Email already in use." });
+      user.email = email.toLowerCase().trim();
+    }
+
+    if (name)    user.name    = name.trim();
+    if (owner)   user.owner   = owner.trim();
+    if (ph)      user.ph      = ph.trim();
+    if (address) user.address = address.trim();
+
+    // Password update — only if provided and non-empty
+    if (password && password.trim().length > 0) {
+      if (password.trim().length < 6)
+        return res.status(400).json({ message: "Password must be at least 6 characters." });
+      user.password = await bcrypt.hash(password.trim(), 10);
+    }
+
+    await user.save();
+
+    const saved = await User.findById(user._id)
+      .select("-password")
+      .populate("plan", "name price days beds isFree");
+
+    res.json({ message: "Profile updated successfully.", user: saved });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
 // ── Register ──────────────────────────────────────────────────────────────────
 app.post("/api/register", async (req, res) => {
   try {
@@ -88,7 +152,7 @@ app.post("/api/register", async (req, res) => {
     let planActivatedAt  = null;
     let planExpiresAt    = null;
     let usedFreePlan     = false;
-    let planBeds         = null; // ← accumulated bed limit
+    let planBeds         = null;
 
     if (planId) {
       const plan = await Plan.findById(planId);
@@ -98,15 +162,13 @@ app.post("/api/register", async (req, res) => {
       planName = plan.name;
 
       if (plan.isFree) {
-        // Free plan → activate immediately, calculate expiry from plan.days
         usedFreePlan    = true;
         loginStatus     = "active";
         planStatus      = "active";
         planActivatedAt = new Date();
         planExpiresAt   = addDays(planActivatedAt, plan.days);
-        planBeds        = plan.beds; // ← set bed limit immediately for free plan
+        planBeds        = plan.beds;
       } else {
-        // Paid plan → pending approval; planBeds set when master approves
         loginStatus = "pending";
         planStatus  = "none";
         planBeds    = null;
@@ -129,7 +191,7 @@ app.post("/api/register", async (req, res) => {
       planExpiresAt,
       planRenewalAt:   null,
       usedFreePlan,
-      planBeds,        // ← persisted on the user document
+      planBeds,
     });
 
     await user.save();
@@ -212,7 +274,6 @@ app.post("/api/login", async (req, res) => {
     if (user.role !== "master" && user.planExpiresAt) {
       const now = new Date();
       if (now > new Date(user.planExpiresAt)) {
-        // Auto-mark expired in DB
         if (user.planStatus !== "expired") {
           user.planStatus = "expired";
           await user.save();
