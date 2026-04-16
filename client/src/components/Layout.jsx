@@ -21,6 +21,10 @@ import {
   Check,
   AlertCircle,
   EyeOff,
+  Mail ,
+  History ,
+  // UserPlus ,
+  
 } from "lucide-react";
 
 const NAV = [
@@ -30,8 +34,13 @@ const NAV = [
   { to: "/candidates",         label: "Total Candidates",    icon: <Users size={20} /> },
   { to: "/addhostel",          label: "Property Management", icon: <Building2 size={20} /> },
   { to: "/overview",           label: "Buildings Overview",  icon: <Eye size={20} /> },
-  { to: "/onboarding-manager", label: "Onboarding Manager",  icon: <UserPlus size={20} /> },
-  { to: "/activity-logs",      label: "Activity Logs",       icon: <Volume2 size={20} /> },
+{ to: "/onboarding-manager", label: "Onboarding Manager", icon: <UserPlus size={20} /> },
+  { to: "/activity-logs",      label: "Activity Logs",       icon: <History size={20} />  },
+  { 
+  to: "/automail-settings",   
+  label: "AutoMail Settings",   
+  icon: <Mail size={20} /> 
+}
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
