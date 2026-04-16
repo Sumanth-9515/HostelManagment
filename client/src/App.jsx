@@ -28,6 +28,7 @@ import MasterPlanSettings from "./pages/master/Masterplansettings.jsx";
 import MasterApprovals from "./pages/master/Masterapprovals.jsx";
 import LandingPage from "./pages/Landingpage.jsx";
 import MasterPlanMonitor from "./pages/master/Masterplanmonitor.jsx";
+import AutoMailSettings from "./pages/Automailsettings.jsx";
 
 // ── Auth guards ───────────────────────────────────────────────────────────────
 function RequireUser({ children }) {
@@ -84,6 +85,9 @@ export default function App() {
       } />
                 <Route path="/activity-logs" element={
         <RequireUser><Layout><ActivityLogs/></Layout></RequireUser>
+      } />
+                    <Route path="/automail-settings" element={
+        <RequireUser><Layout><AutoMailSettings/></Layout></RequireUser>
       } />
 
       {/* ── Master routes wrapped in MasterLayout ──────────────────────── */}

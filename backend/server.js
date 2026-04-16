@@ -16,6 +16,7 @@ import planRoutes from "./routes/planroutes.js";
 import approvalRoutes from "./routes/approvalroutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
+import autoMailRouter, { initAllCronJobs } from "./routes/Automailroutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -55,10 +56,18 @@ app.get("/", (req, res) => {
 });
 
 // ── Database ──────────────────────────────────────────────────────────────────
-mongoose
-  .connect(process.env.MONGO_URL)
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err));
+mongoose.connect(process.env.MONGO_URL)
+  .then(() => {
+    console.log("✅ MongoDB connected");
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB error:", err);
+  });
+
+// 👇 Run cron ONLY after DB is ready
+mongoose.connection.once("open", () => {
+  initAllCronJobs();
+});
 
 // ── Helper: compute expiry date ───────────────────────────────────────────────
 function addDays(date, days) {
@@ -398,6 +407,7 @@ app.use("/api/master",     masterRoutes);
 app.use("/api/activities", activityRoutes);
 app.use("/api/plans",      planRoutes);
 app.use("/api/approval",   approvalRoutes);
+app.use("/api/auto-mail", autoMailRouter);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
