@@ -379,24 +379,22 @@ async function runEmailJobForOwner(ownerId, targetType, force = false) {
 
       await sendBrevoEmail(tenant.email, tenant.name, subject, html);
 
-      // FIX: strict: false forces saving even if your schema is missing the field
       await Tenant.findByIdAndUpdate(
         tenant._id, 
         { $set: { lastMailSent: new Date() } }, 
-        { new: true, strict: false }
+        { returnDocument: 'after', strict: false }
       );
 
       emailsSent++;
       console.log(`[AutoMail]   ✓ Sent ${targetType} email to ${tenant.name}`);
 
-      await sleep(2000);
+      await sleep(2000); 
 
     } catch (err) {
       console.error(`[AutoMail]   ✗ Failed for ${tenant.name}:`, err.message);
     }
   }
 
-  // Update specific last run audit
   if (targetType === "arrears") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunArrears: new Date() });
   if (targetType === "overdue") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunOverdue: new Date() });
   if (targetType === "upcoming") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunUpcoming: new Date() });
@@ -418,13 +416,18 @@ function scheduleJobForOwner(ownerId, type, timeStr) {
   if (isNaN(hours) || isNaN(minutes)) return;
 
   const cronExpr = `${minutes} ${hours} * * *`;
+  
+  // FIX: Force node-cron to use IST timezone so it executes perfectly in Production (Render)
   const task = cron.schedule(cronExpr, async () => {
-    console.log(`[AutoMail] Cron fired for ${jobKey} at ${new Date().toLocaleTimeString()}`);
+    console.log(`[AutoMail] Cron fired for ${jobKey} at ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} (IST)`);
     await runEmailJobForOwner(ownerId, type, false);
+  }, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
   });
 
   cronJobs.set(jobKey, task);
-  console.log(`[AutoMail] Scheduled ${jobKey} at ${timeStr}`);
+  console.log(`[AutoMail] Scheduled ${jobKey} at ${timeStr} (IST)`);
 }
 
 export async function initAllCronJobs() {
@@ -492,7 +495,7 @@ router.post("/config", auth, async (req, res) => {
       {
         $set: { sendArrears, sendOverdue, sendUpcoming, timeArrears, timeOverdue, timeUpcoming, isEnabled },
       },
-      { new: true, upsert: true, runValidators: true }
+      { returnDocument: 'after', upsert: true, runValidators: true }
     );
 
     ["arrears", "overdue", "upcoming"].forEach(type => {
