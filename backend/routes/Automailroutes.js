@@ -173,8 +173,9 @@ async function getBuildingDetailsForTenant(tenant) {
 }
 
 const fmtINR = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : "—";
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
+// ── Email Templates (Fully Responsive with Tables instead of Flex) ──
 function emailWrapper({ accentColor, icon, title, badgeLabel, bodyHtml }) {
   const senderName = process.env.BREVO_SENDER_NAME || "Hostel Manager";
   return `<!DOCTYPE html>
@@ -185,36 +186,36 @@ function emailWrapper({ accentColor, icon, title, badgeLabel, bodyHtml }) {
   <title>${title}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { margin: 0; padding: 0; background: #f0f4f8; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-text-size-adjust: 100%; }
-    .email-bg   { background: #f0f4f8; padding: 28px 16px 40px; }
-    .email-card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.10); }
-    .header { background: linear-gradient(135deg, ${accentColor} 0%, ${accentColor}cc 100%); padding: 36px 40px 28px; text-align: center; position: relative; }
-    .header-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; display: block; }
-    .header-title { color: #ffffff; font-size: 22px; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 4px; }
-    .header-sub { color: rgba(255,255,255,0.82); font-size: 13px; }
-    .header-badge { display: inline-block; margin-top: 14px; background: rgba(255,255,255,0.22); border: 1px solid rgba(255,255,255,0.40); color: #fff; font-size: 12px; font-weight: 700; padding: 5px 16px; border-radius: 50px; text-transform: uppercase; }
-    .body { padding: 32px 36px; }
-    .greeting { font-size: 18px; font-weight: 700; color: #1a202c; margin-bottom: 6px; }
-    .sub-text  { font-size: 14px; color: #4a5568; line-height: 1.7; margin-bottom: 28px; }
-    .amount-box { background: ${accentColor}0f; border: 2px solid ${accentColor}30; border-radius: 14px; padding: 20px; text-align: center; margin-bottom: 24px; }
-    .amount-label { color: #718096; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-    .amount-value { color: ${accentColor}; font-size: 36px; font-weight: 900; letter-spacing: -1px; line-height: 1; }
-    .status-pill { display: inline-block; padding: 5px 16px; border-radius: 50px; font-size: 12px; font-weight: 700; background: ${accentColor}20; color: ${accentColor}; border: 1px solid ${accentColor}40; margin-top: 12px; }
-    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #a0aec0; margin-bottom: 10px; margin-top: 24px; }
-    .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; margin-bottom: 16px; }
-    .info-card-header { background: ${accentColor}0c; border-bottom: 1px solid ${accentColor}20; padding: 10px 18px; display: flex; align-items: center; gap: 8px; }
-    .info-row { display: flex; justify-content: space-between; padding: 11px 18px; border-bottom: 1px solid #edf2f7; }
-    .info-label { color: #718096; font-size: 13px; }
-    .info-value { color: #1a202c; font-size: 13px; font-weight: 600; text-align: right; }
-    .arrears-wrap { background: #fff5f5; border: 1.5px solid #fed7d7; border-radius: 14px; overflow: hidden; margin-bottom: 20px; }
-    .arrears-header { background: #fef2f2; padding: 12px 18px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #fed7d7; }
+    body { margin: 0; padding: 0; background: #f0f4f8; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-text-size-adjust: 100%; width: 100%; }
+    .email-bg { background: #f0f4f8; padding: 20px 10px; width: 100%; }
+    .email-card { max-width: 600px; width: 100%; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, ${accentColor} 0%, ${accentColor}cc 100%); padding: 30px 20px; text-align: center; }
+    .header-icon { font-size: 40px; margin-bottom: 10px; display: block; }
+    .header-title { color: #ffffff; font-size: 20px; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 4px; }
+    .header-sub { color: rgba(255,255,255,0.85); font-size: 13px; }
+    .header-badge { display: inline-block; margin-top: 12px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: #fff; font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 50px; text-transform: uppercase; }
+    .body { padding: 24px 20px; }
+    .greeting { font-size: 16px; font-weight: 700; color: #1a202c; margin-bottom: 6px; }
+    .sub-text { font-size: 13px; color: #4a5568; line-height: 1.6; margin-bottom: 24px; }
+    .amount-box { background: ${accentColor}0f; border: 1px solid ${accentColor}30; border-radius: 12px; padding: 16px; text-align: center; margin-bottom: 24px; }
+    .amount-label { color: #718096; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .amount-value { color: ${accentColor}; font-size: 32px; font-weight: 900; letter-spacing: -1px; }
+    .status-pill { display: inline-block; padding: 4px 12px; border-radius: 50px; font-size: 11px; font-weight: 700; background: ${accentColor}20; color: ${accentColor}; margin-top: 8px; }
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a0aec0; margin-bottom: 8px; margin-top: 20px; }
+    .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+    .info-card-header { background: ${accentColor}0c; border-bottom: 1px solid ${accentColor}20; padding: 10px 16px; }
+    .arrears-wrap { background: #fff5f5; border: 1px solid #fed7d7; border-radius: 12px; overflow: hidden; margin-bottom: 20px; }
+    .arrears-header { background: #fef2f2; padding: 10px 14px; border-bottom: 1px solid #fed7d7; }
     .arrears-table { width: 100%; border-collapse: collapse; }
-    .arrears-table th { background: #fef2f2; color: #991b1b; font-size: 11px; text-transform: uppercase; padding: 8px 14px; text-align: left; border-bottom: 1px solid #fecaca; }
-    .arrears-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #fee2e2; color: #2d3748; }
-    .arrears-total-row { display: flex; justify-content: space-between; padding: 12px 18px; border-top: 2px solid #fecaca; background: #fef2f2; }
-    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 22px 36px 24px; text-align: center; }
-    .footer-logo { font-size: 16px; font-weight: 800; color: ${accentColor}; margin-bottom: 6px; }
-    .footer-text { color: #a0aec0; font-size: 12px; line-height: 1.8; }
+    .arrears-table th { background: #fef2f2; color: #991b1b; font-size: 10px; text-transform: uppercase; padding: 8px; text-align: right; border-bottom: 1px solid #fecaca; }
+    .arrears-table th:first-child { text-align: left; }
+    .arrears-table td { padding: 8px; font-size: 12px; border-bottom: 1px solid #fee2e2; color: #2d3748; text-align: right; }
+    .arrears-table td:first-child { text-align: left; }
+    .arrears-total-row { background: #fef2f2; border-top: 2px solid #fecaca; }
+    .note-box { border-left: 4px solid ${accentColor}; background: ${accentColor}08; border-radius: 0 8px 8px 0; padding: 12px; margin-top: 20px; font-size: 12px; color: #4a5568; line-height: 1.6; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px; text-align: center; }
+    .footer-logo { font-size: 14px; font-weight: 800; color: ${accentColor}; margin-bottom: 4px; }
+    .footer-text { color: #a0aec0; font-size: 11px; line-height: 1.6; }
   </style>
 </head>
 <body>
@@ -245,15 +246,26 @@ function emailWrapper({ accentColor, icon, title, badgeLabel, bodyHtml }) {
 function buildTenantDetailsSection(tenant, accentColor) {
   const rows = [
     tenant.name        && { label: "Full Name",      value: tenant.name },
-    tenant.email       && { label: "Email Address",  value: tenant.email },
+    tenant.email       && { label: "Email",          value: tenant.email },
     tenant.phone       && { label: "Phone",          value: tenant.phone },
-    tenant.joiningDate && { label: "Member Since",   value: fmtDate(tenant.joiningDate) },
+    tenant.joiningDate && { label: "Joined",         value: fmtDate(tenant.joiningDate) },
   ].filter(Boolean);
+  
   return `
     <div class="section-title">👤 Tenant Profile</div>
     <div class="info-card">
-      <div class="info-card-header"><span style="font-size:15px;">🪪</span><span style="font-size:12px;font-weight:700;color:${accentColor};text-transform:uppercase;">Personal Details</span></div>
-      ${rows.map(r => `<div class="info-row"><span class="info-label">${r.label}</span><span class="info-value">${r.value}</span></div>`).join("")}
+      <div class="info-card-header">
+        <span style="font-size:14px; vertical-align: middle;">🪪</span>
+        <span style="font-size:11px;font-weight:700;color:${accentColor};text-transform:uppercase;margin-left:6px;vertical-align: middle;">Personal Details</span>
+      </div>
+      <table width="100%" style="border-collapse: collapse;">
+        ${rows.map(r => `
+          <tr>
+            <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#718096; font-size:12px; width:40%; vertical-align:top;">${r.label}</td>
+            <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#1a202c; font-size:12px; font-weight:600; text-align:right; width:60%; word-break:break-word; vertical-align:top;">${r.value}</td>
+          </tr>
+        `).join("")}
+      </table>
     </div>`;
 }
 
@@ -263,29 +275,40 @@ function buildRoomAllocationSection(buildingDetails) {
     buildingDetails.buildingName  && { label: "Building",     value: buildingDetails.buildingName, icon: "🏢" },
     buildingDetails.roomNumber    && { label: "Room No.",     value: `Room ${buildingDetails.roomNumber}`, icon: "🚪" },
   ].filter(Boolean);
+  
   return `
     <div class="section-title">🏠 Room Allocated</div>
     <div class="info-card">
-      <div class="info-card-header"><span style="font-size:15px;">📋</span><span style="font-size:12px;font-weight:700;color:#2c3e50;text-transform:uppercase;">Accommodation Details</span></div>
-      ${rows.map(r => `<div class="info-row"><span class="info-label">${r.icon} ${r.label}</span><span class="info-value">${r.value}</span></div>`).join("")}
+      <div class="info-card-header">
+        <span style="font-size:14px; vertical-align: middle;">📋</span>
+        <span style="font-size:11px;font-weight:700;color:#2c3e50;text-transform:uppercase;margin-left:6px;vertical-align: middle;">Accommodation Details</span>
+      </div>
+      <table width="100%" style="border-collapse: collapse;">
+        ${rows.map(r => `
+          <tr>
+            <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#718096; font-size:12px; width:45%; vertical-align:top;">${r.icon} ${r.label}</td>
+            <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#1a202c; font-size:12px; font-weight:600; text-align:right; width:55%; word-break:break-word; vertical-align:top;">${r.value}</td>
+          </tr>
+        `).join("")}
+      </table>
     </div>`;
 }
 
 function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOverdue, daysUntilDue, pendingMonths = [], arrearsTotal = 0, totalAccumulatedDue = 0 }) {
   const remaining = record.rentAmount - record.paidAmount;
-  const month = new Date(record.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" });
+  const month = new Date(record.dueDate).toLocaleString("en-IN", { month: "short", year: "numeric" });
   const hasPreviousPending = pendingMonths.length > 0;
   const accentColor = (isOverdue || hasPreviousPending) ? "#e53e3e" : "#d97706";
 
   let statusText, badgeLabel, statusPill;
   if (hasPreviousPending) {
-    badgeLabel  = `${pendingMonths.length} Month${pendingMonths.length > 1 ? "s" : ""} Arrears`;
+    badgeLabel  = `${pendingMonths.length} Mth${pendingMonths.length > 1 ? "s" : ""} Arrears`;
     statusText  = `Your account has <strong style="color:#c53030;">unpaid rent from previous months</strong>. Total outstanding is <strong style="color:#c53030;">${fmtINR(totalAccumulatedDue)}</strong>. Please clear all dues immediately.`;
-    statusPill  = `<span class="status-pill">🚨 Urgent — Multiple Dues Pending</span>`;
+    statusPill  = `<span class="status-pill">🚨 Urgent — Dues Pending</span>`;
   } else if (isOverdue) {
     badgeLabel  = `${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue`;
     statusText  = `Your rent payment for <strong>${month}</strong> is <strong style="color:#c53030;">overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}</strong>. Please pay immediately to avoid late charges.`;
-    statusPill  = `<span class="status-pill">⚠️ ${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue</span>`;
+    statusPill  = `<span class="status-pill">⚠️ Overdue</span>`;
   } else {
     badgeLabel  = daysUntilDue === 0 ? "Due Today" : `Due in ${daysUntilDue} Day${daysUntilDue > 1 ? "s" : ""}`;
     statusText  = `This is a friendly reminder that your rent payment for <strong>${month}</strong> is ${daysUntilDue === 0 ? "<strong>due today</strong>" : `due in <strong>${daysUntilDue} day${daysUntilDue > 1 ? "s" : ""}</strong>`}. Kindly ensure timely payment.`;
@@ -295,35 +318,71 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
   const arrearsHtml = hasPreviousPending ? `
     <div class="section-title">📂 Arrears Breakdown</div>
     <div class="arrears-wrap">
-      <div class="arrears-header"><span style="font-size:16px;">⚠️</span><span style="font-size:13px;font-weight:700;color:#c53030;">${pendingMonths.length} Unpaid Month${pendingMonths.length > 1 ? "s" : ""}</span></div>
+      <div class="arrears-header">
+        <span style="font-size:14px; vertical-align:middle;">⚠️</span>
+        <span style="font-size:12px;font-weight:700;color:#c53030;margin-left:4px;vertical-align:middle;">${pendingMonths.length} Unpaid Month${pendingMonths.length > 1 ? "s" : ""}</span>
+      </div>
       <table class="arrears-table">
-        <thead><tr><th>Month</th><th style="text-align:right;">Rent Due</th><th style="text-align:right;">Paid</th><th style="text-align:right;">Balance</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Mth</th>
+            <th>Due</th>
+            <th>Paid</th>
+            <th>Bal</th>
+          </tr>
+        </thead>
         <tbody>
-          ${pendingMonths.map(pm => `<tr><td>${new Date(pm.dueDate).toLocaleString("en-IN", { month: "short", year: "numeric" })}</td><td style="text-align:right;">${fmtINR(pm.rentAmount)}</td><td style="text-align:right;color:#276749;font-weight:600;">${fmtINR(pm.paidAmount)}</td><td style="text-align:right;color:#c53030;font-weight:700;">${fmtINR(pm.rentAmount - pm.paidAmount)}</td></tr>`).join("")}
+          ${pendingMonths.map(pm => `
+            <tr>
+              <td>${new Date(pm.dueDate).toLocaleString("en-IN", { month: "short", year: "2-digit" })}</td>
+              <td>${fmtINR(pm.rentAmount)}</td>
+              <td style="color:#276749;font-weight:600;">${fmtINR(pm.paidAmount)}</td>
+              <td style="color:#c53030;font-weight:700;">${fmtINR(pm.rentAmount - pm.paidAmount)}</td>
+            </tr>
+          `).join("")}
+          <tr class="arrears-total-row">
+            <td colspan="3" style="font-weight:700;color:#991b1b;padding:12px 8px;">Total Arrears</td>
+            <td style="font-weight:800;color:#c53030;padding:12px 8px;font-size:14px;">${fmtINR(arrearsTotal)}</td>
+          </tr>
         </tbody>
       </table>
-      <div class="arrears-total-row"><span style="font-size:13px;font-weight:700;color:#991b1b;">Previous Arrears Total</span><span style="font-size:16px;font-weight:800;color:#c53030;">${fmtINR(arrearsTotal)}</span></div>
     </div>` : "";
 
   const bodyHtml = `
     <p class="greeting">Hello, ${tenant.name}! 👋</p>
     <p class="sub-text">${statusText}</p>
     <div class="amount-box">
-      <div class="amount-label">${hasPreviousPending ? "Total Outstanding (All Months)" : "Amount Due This Month"}</div>
+      <div class="amount-label">${hasPreviousPending ? "Total Outstanding" : "Amount Due"}</div>
       <div class="amount-value">${fmtINR(hasPreviousPending ? totalAccumulatedDue : remaining)}</div>
       <div>${statusPill}</div>
     </div>
+    
     <div class="section-title">📅 Current Billing Cycle</div>
     <div class="info-card">
-      <div class="info-card-header"><span style="font-size:15px;">💳</span><span style="font-size:12px;font-weight:700;color:${accentColor};text-transform:uppercase;">Payment Details</span></div>
-      <div class="info-row"><span class="info-label">Billing Month</span><span class="info-value">${month}</span></div>
-      <div class="info-row"><span class="info-label">Due Date</span><span class="info-value">${fmtDate(record.dueDate)}</span></div>
-      <div class="info-row"><span class="info-label">Remaining This Month</span><span class="info-value" style="color:${accentColor};">${fmtINR(remaining)}</span></div>
+      <div class="info-card-header">
+        <span style="font-size:14px; vertical-align: middle;">💳</span>
+        <span style="font-size:11px;font-weight:700;color:${accentColor};text-transform:uppercase;margin-left:6px;vertical-align: middle;">Payment Details</span>
+      </div>
+      <table width="100%" style="border-collapse: collapse;">
+        <tr>
+          <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#718096; font-size:12px; width:45%;">Billing Month</td>
+          <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#1a202c; font-size:12px; font-weight:600; text-align:right; width:55%;">${month}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#718096; font-size:12px;">Due Date</td>
+          <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#1a202c; font-size:12px; font-weight:600; text-align:right;">${fmtDate(record.dueDate)}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px; color:#718096; font-size:12px;">Remaining This Mth</td>
+          <td style="padding:10px 16px; font-size:12px; font-weight:700; text-align:right; color:${accentColor};">${fmtINR(remaining)}</td>
+        </tr>
+      </table>
     </div>
+    
     ${arrearsHtml}
     ${buildTenantDetailsSection(tenant, accentColor)}
     ${buildRoomAllocationSection(buildingDetails)}
-    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+    
     <div class="note-box">💡 <strong>Note:</strong> If you have already made this payment, please disregard this reminder.</div>`;
 
   const subject = hasPreviousPending ? `🚨 Urgent: Rent Arrears — ${fmtINR(totalAccumulatedDue)} Outstanding` : isOverdue ? `⚠️ Rent Overdue — ${month}` : `🔔 Rent Reminder: Due ${daysUntilDue === 0 ? "Today" : `in ${daysUntilDue} Days`} — ${month}`;
@@ -395,6 +454,7 @@ async function runEmailJobForOwner(ownerId, targetType, force = false) {
     }
   }
 
+  // Update specific last run audit
   if (targetType === "arrears") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunArrears: new Date() });
   if (targetType === "overdue") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunOverdue: new Date() });
   if (targetType === "upcoming") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunUpcoming: new Date() });
@@ -402,7 +462,7 @@ async function runEmailJobForOwner(ownerId, targetType, force = false) {
   console.log(`[AutoMail] ${targetType.toUpperCase()} Job done — ${emailsSent} sent.`);
 }
 
-// ── Cron Job Registry ──
+// ── Cron Job Registry (With IST Timezone Fix) ──
 const cronJobs = new Map();
 
 function scheduleJobForOwner(ownerId, type, timeStr) {
@@ -417,7 +477,7 @@ function scheduleJobForOwner(ownerId, type, timeStr) {
 
   const cronExpr = `${minutes} ${hours} * * *`;
   
-  // FIX: Force node-cron to use IST timezone so it executes perfectly in Production (Render)
+  // FIX: Force node-cron to use IST timezone so it executes perfectly in Production
   const task = cron.schedule(cronExpr, async () => {
     console.log(`[AutoMail] Cron fired for ${jobKey} at ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} (IST)`);
     await runEmailJobForOwner(ownerId, type, false);
