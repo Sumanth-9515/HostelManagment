@@ -41,6 +41,7 @@ function getMins(timeStr) {
   return h * 60 + m;
 }
 
+// ── Fixed Responsive Toggle Component ──
 function ToggleBlock({ label, description, checked, onChange, count, badgeColor, color = "violet", time, onTimeChange, lastRun, disabled = false }) {
   const colors = {
     red:    { track: "bg-red-500",    dot: "bg-white" },
@@ -52,17 +53,19 @@ function ToggleBlock({ label, description, checked, onChange, count, badgeColor,
 
   return (
     <div className={`rounded-2xl border transition-all duration-200 overflow-hidden ${checked ? "bg-white border-gray-300 shadow-sm" : "bg-gray-50 border-gray-100"}`}>
-      <div className="flex items-center justify-between gap-4 p-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-bold text-gray-800">{label}</p>
+      
+      {/* Top Toggle Row */}
+      <div className="flex items-center justify-between gap-3 p-4">
+        <div className="flex-1 min-w-0 pr-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-bold text-gray-800 break-words">{label}</p>
             {count !== undefined && (
-              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black tracking-wide ${badgeColor || 'bg-gray-200 text-gray-700'}`}>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black tracking-wide whitespace-nowrap ${badgeColor || 'bg-gray-200 text-gray-700'}`}>
                 {count} {count === 1 ? 'tenant' : 'tenants'}
               </span>
             )}
           </div>
-          {description && <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{description}</p>}
+          {description && <p className="text-xs text-gray-400 mt-1 leading-relaxed">{description}</p>}
         </div>
         <button
           type="button"
@@ -77,23 +80,24 @@ function ToggleBlock({ label, description, checked, onChange, count, badgeColor,
         </button>
       </div>
 
+      {/* Expanded Time Setup Row - Fixed for Mobile wrapping */}
       {checked && (
-        <div className="bg-gray-50/80 px-4 py-3 border-t border-gray-100 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Set Time:</p>
+        <div className="bg-gray-50/80 px-4 py-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <p className="text-[11px] sm:text-xs font-bold text-gray-500 uppercase tracking-wide">Set Time:</p>
             <input
               type="time"
               value={time}
               onChange={(e) => onTimeChange(e.target.value)}
               className="px-2 py-1.5 rounded-lg border border-gray-300 bg-white text-sm font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400"
             />
-            <span className="text-xs font-bold text-gray-700 bg-white px-2 py-1 rounded-md border shadow-sm">
+            <span className="text-xs font-bold text-gray-700 bg-white px-2 py-1 rounded-md border shadow-sm whitespace-nowrap">
               {formatAMPM(time)}
             </span>
           </div>
-          <div className="text-right">
+          <div className="text-left sm:text-right mt-1 sm:mt-0">
             <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Last Run</p>
-            <p className="text-xs font-semibold text-gray-600">{fmtDateTime(lastRun)}</p>
+            <p className="text-[11px] sm:text-xs font-semibold text-gray-600">{fmtDateTime(lastRun)}</p>
           </div>
         </div>
       )}
@@ -136,11 +140,11 @@ function TenantMailRow({ tenant, fallbackDate }) {
       <div className="shrink-0 text-right">
         {sentToday ? (
           <div>
-            <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white">✓ Sent Today</span>
+            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-emerald-500 text-white">✓ Sent Today</span>
             <p className="text-[10px] text-emerald-600 mt-1">{fmtDateTime(effectiveDate)}</p>
           </div>
         ) : (
-          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-gray-200 text-gray-500">NOT SENT</span>
+          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-gray-200 text-gray-500">NOT SENT</span>
         )}
       </div>
     </div>
@@ -394,19 +398,19 @@ export default function AutoMailSettings() {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-3 rounded-2xl font-bold text-white bg-violet-600 hover:bg-violet-700 shadow-md">
+              <button onClick={handleSave} disabled={saving} className="flex-1 py-3 rounded-2xl font-bold text-white bg-violet-600 hover:bg-violet-700 shadow-md transition-opacity disabled:opacity-50">
                 {saving ? "Saving…" : "💾 Save Changes"}
               </button>
-              <button onClick={handleRunNow} disabled={running} className="flex-1 py-3 rounded-2xl font-bold text-white bg-amber-500 hover:bg-amber-600 shadow-md">
+              {/* <button onClick={handleRunNow} disabled={running} className="flex-1 py-3 rounded-2xl font-bold text-white bg-amber-500 hover:bg-amber-600 shadow-md transition-opacity disabled:opacity-50">
                 {running ? "Executing…" : "▶ Run Immediately"}
-              </button>
+              </button> */}
             </div>
           </div>
 
           {/* Right Column (Live Status) */}
           <div className="lg:col-span-7">
-            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 min-h-full">
-              <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-4 sm:p-6 min-h-full">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 text-lg">📬</div>
                   <div>
