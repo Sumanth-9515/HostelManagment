@@ -41,7 +41,6 @@ function getMins(timeStr) {
   return h * 60 + m;
 }
 
-// ── Custom Toggle Component with Nested Time Picker ──
 function ToggleBlock({ label, description, checked, onChange, count, badgeColor, color = "violet", time, onTimeChange, lastRun, disabled = false }) {
   const colors = {
     red:    { track: "bg-red-500",    dot: "bg-white" },
@@ -53,8 +52,6 @@ function ToggleBlock({ label, description, checked, onChange, count, badgeColor,
 
   return (
     <div className={`rounded-2xl border transition-all duration-200 overflow-hidden ${checked ? "bg-white border-gray-300 shadow-sm" : "bg-gray-50 border-gray-100"}`}>
-      
-      {/* Top Toggle Row */}
       <div className="flex items-center justify-between gap-4 p-4">
         <div>
           <div className="flex items-center gap-2">
@@ -80,7 +77,6 @@ function ToggleBlock({ label, description, checked, onChange, count, badgeColor,
         </button>
       </div>
 
-      {/* Expanded Time Setup Row */}
       {checked && (
         <div className="bg-gray-50/80 px-4 py-3 border-t border-gray-100 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -124,9 +120,7 @@ function Toast({ msg, type = "success", onDone }) {
   );
 }
 
-// ── FIX: Uses a resilient fallback if Schema dropped lastMailSent ──
 function TenantMailRow({ tenant, fallbackDate }) {
-  // If individual tenant record misses the date, fallback to the Category's global lastRun
   const effectiveDate = tenant.lastMailSent || fallbackDate;
   const sentToday = isToday(effectiveDate);
 
@@ -234,7 +228,6 @@ export default function AutoMailSettings() {
     setConfig((prev) => ({ ...prev, [field]: value }));
   }
 
-  // Frontend 30-min validation
   function validateTimes() {
     if (!config.isEnabled) return true;
     const active = [];
@@ -286,7 +279,7 @@ export default function AutoMailSettings() {
       setTimeout(() => {
         fetchConfig();
         fetchTenants();
-      }, 15000); // refresh list and config statuses
+      }, 15000); 
     } catch (err) {
       setToast({ msg: err.message, type: "error" });
     } finally {
