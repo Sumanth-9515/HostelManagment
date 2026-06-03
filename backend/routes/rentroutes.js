@@ -172,6 +172,20 @@ function isDueAlert({ hasPreviousPending, remaining, isOverdue, daysUntilDue }) 
   return hasPreviousPending || (owesCurrent && currentIsDueSoonOrOverdue);
 }
 
+function normalizePaymentStatusFilter(value) {
+  return ["previous", "current", "upcoming", "all"].includes(value) ? value : "previous";
+}
+
+function matchesPaymentStatusFilter(item, filter) {
+  if (filter === "all") return true;
+  if (filter === "previous") return item.hasPreviousPending;
+  if (filter === "current") return !item.hasPreviousPending && item.remaining > 0 && item.isOverdue;
+  if (filter === "upcoming") {
+    return !item.hasPreviousPending && item.remaining > 0 && !item.isOverdue && item.daysUntilDue !== null && item.daysUntilDue <= 2;
+  }
+  return item.hasPreviousPending;
+}
+
 const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 
 // ── Email Template Helpers ───────────────────────────────────────────────────
@@ -496,13 +510,13 @@ function buildPartialPaymentEmail({ tenant, record, paymentAmount, buildingDetai
 // ── GET /due (Paginated + Global Stats) ──────────────────────────────────────────
 router.get("/due", auth, async (req, res) => {
   try {
-    const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+    const page = 1;
+    const paymentStatus = normalizePaymentStatusFilter(req.query.paymentStatus);
 
     const tenants = await Tenant.find(
       { owner: req.user.id, status: "Active" },
       {
-        _id: 1, name: 1, phone: 1, email: 1, joiningDate: 1, rentAmount: 1,
+        _id: 1, name: 1, phone: 1, email: 1, joiningDate: 1, rentAmount: 1, advanceAmount: 1,
         buildingId: 1, floorId: 1, roomId: 1, bedId: 1,
         allocationInfo: 1, documents: 1,
         fatherName: 1, fatherPhone: 1, permanentAddress: 1, status: 1,
@@ -511,7 +525,7 @@ router.get("/due", auth, async (req, res) => {
 
     if (tenants.length === 0) {
       return res.json({ 
-        data: [], page, limit, total: 0, totalPages: 0,
+        data: [], page, limit: 0, total: 0, totalPages: 0,
         stats: { totalAlerts: 0, totalOverdueOrCarryForward: 0, totalDueSoon: 0, totalPendingAmount: 0, carryForwardTenantsCount: 0 }
       });
     }
@@ -523,9 +537,11 @@ router.get("/due", auth, async (req, res) => {
       })
     );
 
-    const filtered = summaries.filter(isDueAlert).sort(sortDueResults);
+    const filtered = summaries
+      .filter(isDueAlert)
+      .filter((item) => matchesPaymentStatusFilter(item, paymentStatus))
+      .sort(sortDueResults);
 
-    // Calculate global stats BEFORE paginating
     let totalPendingAmount = 0;
     let totalOverdueOrCarryForward = 0;
     let totalDueSoon = 0;
@@ -544,12 +560,11 @@ router.get("/due", auth, async (req, res) => {
     });
 
     const total      = filtered.length;
-    const totalPages = Math.ceil(total / limit) || 1;
-    const start      = (page - 1) * limit;
-    const data       = filtered.slice(start, start + limit).map(toResponseItem);
+    const totalPages = total > 0 ? 1 : 0;
+    const data       = filtered.map(toResponseItem);
 
     res.json({ 
-      data, page, limit, total, totalPages,
+      data, page, limit: total, total, totalPages,
       stats: {
         totalAlerts: total,
         totalOverdueOrCarryForward,
@@ -567,6 +582,7 @@ router.get("/due", auth, async (req, res) => {
 router.get("/due/search", auth, async (req, res) => {
   try {
     const q = (req.query.q || "").trim();
+    const paymentStatus = normalizePaymentStatusFilter(req.query.paymentStatus);
     if (!q) return res.status(400).json({ message: "Query param 'q' is required." });
 
     const tenants = await Tenant.find({
@@ -586,6 +602,7 @@ router.get("/due/search", auth, async (req, res) => {
 
     const data = summaries
       .filter(isDueAlert)
+      .filter((item) => matchesPaymentStatusFilter(item, paymentStatus))
       .sort(sortDueResults)
       .map(toResponseItem);
 

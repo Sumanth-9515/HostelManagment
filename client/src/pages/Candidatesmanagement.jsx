@@ -265,6 +265,7 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
         permanentAddress: t.permanentAddress || "",
         joiningDate:      t.joiningDate ? t.joiningDate.slice(0, 10) : "",
         rentAmount:       t.rentAmount || "",
+        advanceAmount:    t.advanceAmount ?? 0,
       });
     }
   }, [data]);
@@ -289,6 +290,7 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
       fd.append("permanentAddress", editForm.permanentAddress);
       fd.append("joiningDate",      editForm.joiningDate);
       fd.append("rentAmount",       editForm.rentAmount);
+      fd.append("advanceAmount",    editForm.advanceAmount === "" ? "0" : String(Number(editForm.advanceAmount) || 0));
       if (docFiles.aadharFront)   fd.append("aadharFront",   docFiles.aadharFront);
       if (docFiles.aadharBack)    fd.append("aadharBack",    docFiles.aadharBack);
       if (docFiles.passportPhoto) fd.append("passportPhoto", docFiles.passportPhoto);
@@ -337,6 +339,7 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
 
   const { tenant, buildingDetails, currentRecord, remaining, history, pendingMonths, arrearsTotal, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = data || {};
   const phone        = tenant?.phone?.replace(/\D/g, "");
+  const advanceAmount = Number(tenant?.advanceAmount || 0);
   const passportPhoto = tenant?.documents?.passportPhoto;
   const inputClass   = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-900 text-sm focus:outline-none focus:border-amber-400 transition-colors";
 
@@ -443,6 +446,13 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
                         {statusPill(tenant?.status)}
                       </div>
                       <p className="text-gray-500 text-sm truncate mt-0.5">{tenant?.email || "No email on record"}</p>
+                      <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-1 shadow-sm">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-black text-amber-700 shadow-sm">₹</span>
+                        <div className="leading-tight">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600">Advance Paid</p>
+                          <p className="text-sm font-black text-gray-900">{fmt(advanceAmount)}</p>
+                        </div>
+                      </div>
                       <div className="flex flex-wrap gap-2 mt-2">
                         <button
                           onClick={() => window.open(`https://wa.me/91${phone}`, "_blank")}
@@ -473,20 +483,28 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
                           { label: "Phone *",            key: "phone",            type: "tel",    placeholder: "Phone number" },
                           { label: "Email",              key: "email",            type: "email",  placeholder: "Email address" },
                           { label: "Monthly Rent (₹) *", key: "rentAmount",       type: "number", placeholder: "Rent amount" },
+                          { label: "Advance Paid (₹)",   key: "advanceAmount",    type: "number", placeholder: "0" },
                           { label: "Joining Date",       key: "joiningDate",      type: "date",   placeholder: "" },
                           { label: "Permanent Address",  key: "permanentAddress", type: "text",   placeholder: "Permanent address" },
-                        ].map(({ label, key, type, placeholder }) => (
-                          <div key={key}>
-                            <label className="text-gray-500 text-[11px] uppercase tracking-wide">{label}</label>
+                        ].map(({ label, key, type, placeholder }) => {
+                          const isAdvance = key === "advanceAmount";
+                          return (
+                          <div key={key} className={isAdvance ? "rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-3" : ""}>
+                            <label className={isAdvance ? "mb-1 block text-[11px] font-bold uppercase tracking-wide text-amber-700" : "text-gray-500 text-[11px] uppercase tracking-wide"}>{label}</label>
+                            <div className={isAdvance ? "flex items-center gap-2" : ""}>
+                              {isAdvance && <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-amber-700 shadow-sm">₹</span>}
                             <input
                               type={type}
-                              value={editForm[key] || ""}
+                              min={isAdvance ? "0" : undefined}
+                              value={isAdvance ? (editForm[key] ?? "") : (editForm[key] || "")}
                               onChange={(e) => handleEditField(key, e.target.value)}
-                              className={inputClass}
+                              className={isAdvance ? "w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-gray-900 text-sm font-bold focus:outline-none focus:border-amber-400 transition-colors" : inputClass}
                               placeholder={placeholder}
                             />
+                            </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -622,7 +640,7 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
                         ["Email",             tenant?.email],
                         ["Joining Date",      fmtDate(tenant?.joiningDate)],
                         ["Monthly Rent",      fmt(tenant?.rentAmount)],
-                        ["Advance Paid",      tenant?.advanceAmount ? fmt(tenant.advanceAmount) : null],
+                        ["Advance Paid",      fmt(advanceAmount)],
                         ["Permanent Address", tenant?.permanentAddress],
                         buildingDetails && ["Building",  buildingDetails.buildingName],
                         buildingDetails && ["Floor",     `Floor ${buildingDetails.floorNumber}`],
