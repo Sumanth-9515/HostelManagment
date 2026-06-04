@@ -37,14 +37,47 @@ const pill = (status) => (
   </span>
 );
 
-function buildPayable(pendingMonths = [], record = null, remaining = 0) {
+function AdvanceStatusBadge({ advanceAmount = 0, paidAdvanceAmount = 0, pendingAdvanceAmount = 0, compact = false }) {
+  if (advanceAmount <= 0) return null;
+  const isPaid = pendingAdvanceAmount <= 0;
+  if (compact) {
+    return (
+      <div className={`mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 shadow-sm ${isPaid ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50"}`}>
+        <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-black shadow-sm ${isPaid ? "text-emerald-700" : "text-amber-700"}`}>₹</span>
+        <div className="leading-tight">
+          <p className={`text-[10px] font-bold uppercase tracking-wide ${isPaid ? "text-emerald-700" : "text-amber-600"}`}>{isPaid ? "Advance Paid" : "Advance Pending"}</p>
+          <p className="text-sm font-black text-gray-900">{fmt(isPaid ? paidAdvanceAmount : pendingAdvanceAmount)}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`mt-2 rounded-lg border px-3 py-2 ${isPaid ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
+      <div className="flex justify-between text-[11px]">
+        <span className={`font-semibold ${isPaid ? "text-emerald-700" : "text-amber-700"}`}>{isPaid ? "Advance Paid" : "Advance Pending"}</span>
+        <span className={`font-bold ${isPaid ? "text-emerald-700" : "text-amber-700"}`}>{fmt(isPaid ? paidAdvanceAmount : pendingAdvanceAmount)}</span>
+      </div>
+      {!isPaid && (
+        <div className="mt-1 flex justify-between text-[10px] text-amber-600">
+          <span>Paid: {fmt(paidAdvanceAmount)}</span>
+          <span>Total: {fmt(advanceAmount)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function buildPayable(pendingMonths = [], record = null, remaining = 0, pendingAdvanceAmount = 0) {
   const arr = [];
+  if (pendingAdvanceAmount > 0)
+    arr.push({ monthYear: "__advance__", paymentType: "advance", maxAmount: pendingAdvanceAmount, label: "Advance Amount" });
   pendingMonths.forEach((pm) => {
     const rem = pm.rentAmount - pm.paidAmount;
-    if (rem > 0) arr.push({ monthYear: pm.monthYear, maxAmount: rem, label: `${fmtMonthYear(pm.dueDate)} (Arrears)` });
+    if (rem > 0) arr.push({ monthYear: pm.monthYear, paymentType: "rent", maxAmount: rem, label: `${fmtMonthYear(pm.dueDate)} (Arrears)` });
   });
   if (record && remaining > 0)
-    arr.push({ monthYear: record.monthYear, maxAmount: remaining, label: `${fmtMonthYear(record.dueDate)} (Current)` });
+    arr.push({ monthYear: record.monthYear, paymentType: "rent", maxAmount: remaining, label: `${fmtMonthYear(record.dueDate)} (Current)` });
   return arr;
 }
 
@@ -486,10 +519,10 @@ function BillPreviewModal({ item, onClose }) {
 
 // ─── Due Card ─────────────────────────────────────────────────────────────────
 function DueCard({ item, onSelect, onPayNow }) {
-  const { tenant, record, remaining, isOverdue, daysOverdue, daysUntilDue, pendingMonths, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = item;
+  const { tenant, record, remaining, isOverdue, daysOverdue, daysUntilDue, pendingMonths, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount, pendingAdvanceAmount = 0, paidAdvanceAmount = 0, advanceAmount = 0 } = item;
   const alloc = tenant.allocationInfo || {};
   const phone = tenant.phone?.replace(/\D/g, "");
-  const payable = buildPayable(pendingMonths, record, remaining);
+  const payable = buildPayable(pendingMonths, record, remaining, pendingAdvanceAmount);
   const passportPhoto = tenant.documents?.passportPhoto;
   const [showProfilePopup, setShowProfilePopup] = useState(false);
   const [showBillModal, setShowBillModal] = useState(false);
@@ -565,6 +598,11 @@ const handleWA = (e) => {
           <div className="flex flex-wrap gap-1.5 mb-3">
             {alloc.buildingName && <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">🏢 {alloc.buildingName}</span>}
             {alloc.roomNumber   && <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-gray-600">🚪 Room {alloc.roomNumber}</span>}
+            {advanceAmount > 0 && (
+              <span className={`text-[11px] px-2 py-0.5 rounded-md border font-semibold ${pendingAdvanceAmount > 0 ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-emerald-50 border-emerald-200 text-emerald-700"}`}>
+                Adv {fmt(pendingAdvanceAmount > 0 ? pendingAdvanceAmount : paidAdvanceAmount)}
+              </span>
+            )}
           </div>
 
           <div className="flex items-end justify-between">
@@ -834,10 +872,10 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
 
   if (!data && !loading) return null;
 
-  const { tenant, buildingDetails, currentRecord, remaining, history, pendingMonths, arrearsTotal, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = data || {};
+  const { tenant, buildingDetails, currentRecord, remaining, history, pendingMonths, arrearsTotal, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount, pendingAdvanceAmount = 0, paidAdvanceAmount = 0 } = data || {};
   const phone = tenant?.phone?.replace(/\D/g, "");
   const advanceAmount = Number(tenant?.advanceAmount || 0);
-  const payable = buildPayable(pendingMonths, currentRecord, remaining);
+  const payable = buildPayable(pendingMonths, currentRecord, remaining, pendingAdvanceAmount);
   const passportPhoto = tenant?.documents?.passportPhoto;
   const handleViewDocument = (docUrl) => { if (docUrl) setViewingDoc(docUrl); };
   const inputClass = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-900 text-sm focus:outline-none focus:border-amber-400 transition-colors";
@@ -912,13 +950,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                 <div className="flex-1 min-w-0">
                   <h3 className="text-gray-900 font-bold text-lg sm:text-xl truncate">{tenant?.name}</h3>
                   <p className="text-gray-500 text-sm truncate">{tenant?.email || "No email on record"}</p>
-                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-1 shadow-sm">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-black text-amber-700 shadow-sm">₹</span>
-                    <div className="leading-tight">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600">Advance Paid</p>
-                      <p className="text-sm font-black text-gray-900">{fmt(advanceAmount)}</p>
-                    </div>
-                  </div>
+                  <AdvanceStatusBadge advanceAmount={advanceAmount} paidAdvanceAmount={paidAdvanceAmount} pendingAdvanceAmount={pendingAdvanceAmount} compact />
                   <div className="flex flex-wrap gap-2 mt-2">
 <button 
   onClick={() => window.open(`https://wa.me/91${phone}?text=${buildWAMessage(
@@ -965,7 +997,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                   <div><label className="text-gray-500 text-[11px] uppercase tracking-wide">Email</label><input type="email" value={editForm.email} onChange={(e) => handleEditField("email", e.target.value)} className={inputClass} placeholder="Email address" /></div>
                   <div><label className="text-gray-500 text-[11px] uppercase tracking-wide">Monthly Rent (₹) *</label><input type="number" value={editForm.rentAmount} onChange={(e) => handleEditField("rentAmount", e.target.value)} className={inputClass} placeholder="Rent amount" /></div>
                   <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-3">
-                    <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-amber-700">Advance Paid (₹)</label>
+                    <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-amber-700">Advance Amount (₹)</label>
                     <div className="flex items-center gap-2">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-amber-700 shadow-sm">₹</span>
                       <input type="number" min="0" value={editForm.advanceAmount ?? ""} onChange={(e) => handleEditField("advanceAmount", e.target.value)} className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-gray-900 text-sm font-bold focus:outline-none focus:border-amber-400 transition-colors" placeholder="0" />
@@ -1063,7 +1095,9 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                   ["Phone", tenant?.phone],
                   ["Joining Date", fmtDate(tenant?.joiningDate)],
                   ["Monthly Rent", fmt(tenant?.rentAmount)],
-                  ["Advance Paid", fmt(advanceAmount)],
+                  ["Advance Expected", fmt(advanceAmount)],
+                  ["Advance Paid", fmt(paidAdvanceAmount)],
+                  ["Advance Pending", fmt(pendingAdvanceAmount)],
                   ["Permanent Address", tenant?.permanentAddress],
                   buildingDetails && ["Building", buildingDetails.buildingName],
                   buildingDetails && ["Floor", `Floor ${buildingDetails.floorNumber}`],
@@ -1175,7 +1209,11 @@ function PayModal({ tenantId, payableMonths, initialMonthYear, onClose, onSucces
     if (val > maxAmount) return setError(`Amount cannot exceed remaining due of ${fmt(maxAmount)}.`);
     setLoading(true); setError("");
     try {
-      const r = await fetch(`${API}/rent/pay`, { method: "POST", headers: authHeader(), body: JSON.stringify({ tenantId, amount: val, note, monthYear: selectedMonth }) });
+      const r = await fetch(`${API}/rent/pay`, {
+        method: "POST",
+        headers: authHeader(),
+        body: JSON.stringify({ tenantId, amount: val, note, monthYear: selectedMonth, paymentType: selectedOption?.paymentType || "rent" }),
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.message);
       onSuccess(d);
@@ -1194,7 +1232,7 @@ function PayModal({ tenantId, payableMonths, initialMonthYear, onClose, onSucces
         <div className="p-6 space-y-4">
           {payableMonths.length > 1 ? (
             <div>
-              <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Select Month to Pay</label>
+              <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Select Month / Advance to Pay</label>
               <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-sm font-bold focus:outline-none focus:border-amber-400">
                 {payableMonths.map((m) => <option key={m.monthYear} value={m.monthYear}>{m.label} — {fmt(m.maxAmount)}</option>)}
               </select>
@@ -1202,7 +1240,7 @@ function PayModal({ tenantId, payableMonths, initialMonthYear, onClose, onSucces
           ) : (
             <div><p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Paying For</p><p className="text-gray-900 text-lg font-bold">{selectedOption?.label}</p></div>
           )}
-          <div><p className="text-gray-500 text-xs uppercase tracking-wide mb-1">Remaining Due</p><p className="text-3xl font-black text-amber-600">{fmt(maxAmount)}</p></div>
+          <div><p className="text-gray-500 text-xs uppercase tracking-wide mb-1">{selectedOption?.paymentType === "advance" ? "Pending Advance" : "Remaining Due"}</p><p className="text-3xl font-black text-amber-600">{fmt(maxAmount)}</p></div>
           <div><label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Amount Paid (₹)</label><input ref={inputRef} type="number" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePay()} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-amber-400" min="1" max={maxAmount} /></div>
           <div><label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Note (optional)</label><input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-amber-400" placeholder="Cash, UPI, etc." /></div>
           {error && <p className="text-rose-600 text-sm bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
@@ -1414,7 +1452,7 @@ export default function RentManagement() {
   const searchDebounceRef = useRef(null);
 
   const [locationFilter, setLocationFilter] = useState({ building: "", floor: "", room: "" });
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState("previous");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
 
 
 
@@ -1550,7 +1588,7 @@ export default function RentManagement() {
     { value: "upcoming", label: "Upcoming dues" },
     { value: "all", label: "All" },
   ];
-  const selectedPaymentStatusLabel = paymentStatusOptions.find((o) => o.value === paymentStatusFilter)?.label || "Previous months overdues";
+  const selectedPaymentStatusLabel = paymentStatusOptions.find((o) => o.value === paymentStatusFilter)?.label || "All";
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">

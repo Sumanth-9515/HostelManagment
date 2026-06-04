@@ -13,6 +13,7 @@ const TenantSchema = new mongoose.Schema(
     rentAmount: { type: Number, required: true },
     // ── NEW: Advance amount paid at joining (optional, defaults to 0) ──
     advanceAmount: { type: Number, default: 0 },
+    paidAdvanceAmount: { type: Number, default: 0 },
     buildingId: { type: mongoose.Schema.Types.ObjectId, ref: "Building", default: null },
     floorId: { type: mongoose.Schema.Types.ObjectId, default: null },
     roomId: { type: mongoose.Schema.Types.ObjectId, default: null },

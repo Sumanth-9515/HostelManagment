@@ -42,6 +42,20 @@ const rentPill = (status) => {
 };
 
 // ─── Profile Image Full Popup ─────────────────────────────────────────────────
+function AdvanceStatusBadge({ advanceAmount = 0, paidAdvanceAmount = 0, pendingAdvanceAmount = 0 }) {
+  if (advanceAmount <= 0) return null;
+  const isPaid = pendingAdvanceAmount <= 0;
+  return (
+    <div className={`mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 shadow-sm ${isPaid ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50"}`}>
+      <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-black shadow-sm ${isPaid ? "text-emerald-700" : "text-amber-700"}`}>₹</span>
+      <div className="leading-tight">
+        <p className={`text-[10px] font-bold uppercase tracking-wide ${isPaid ? "text-emerald-700" : "text-amber-600"}`}>{isPaid ? "Advance Paid" : "Advance Pending"}</p>
+        <p className="text-sm font-black text-gray-900">{fmt(isPaid ? paidAdvanceAmount : pendingAdvanceAmount)}</p>
+      </div>
+    </div>
+  );
+}
+
 function ProfileImagePopup({ imageUrl, name, onClose }) {
   return (
     <div
@@ -337,7 +351,7 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
 
   if (!data && !loading) return null;
 
-  const { tenant, buildingDetails, currentRecord, remaining, history, pendingMonths, arrearsTotal, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount } = data || {};
+  const { tenant, buildingDetails, currentRecord, remaining, history, pendingMonths, arrearsTotal, totalAccumulatedDue, hasPreviousPending, pendingMonthsCount, pendingAdvanceAmount = 0, paidAdvanceAmount = 0 } = data || {};
   const phone        = tenant?.phone?.replace(/\D/g, "");
   const advanceAmount = Number(tenant?.advanceAmount || 0);
   const passportPhoto = tenant?.documents?.passportPhoto;
@@ -446,13 +460,7 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
                         {statusPill(tenant?.status)}
                       </div>
                       <p className="text-gray-500 text-sm truncate mt-0.5">{tenant?.email || "No email on record"}</p>
-                      <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-1 shadow-sm">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-black text-amber-700 shadow-sm">₹</span>
-                        <div className="leading-tight">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600">Advance Paid</p>
-                          <p className="text-sm font-black text-gray-900">{fmt(advanceAmount)}</p>
-                        </div>
-                      </div>
+                      <AdvanceStatusBadge advanceAmount={advanceAmount} paidAdvanceAmount={paidAdvanceAmount} pendingAdvanceAmount={pendingAdvanceAmount} />
                       <div className="flex flex-wrap gap-2 mt-2">
                         <button
                           onClick={() => window.open(`https://wa.me/91${phone}`, "_blank")}
@@ -483,7 +491,7 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
                           { label: "Phone *",            key: "phone",            type: "tel",    placeholder: "Phone number" },
                           { label: "Email",              key: "email",            type: "email",  placeholder: "Email address" },
                           { label: "Monthly Rent (₹) *", key: "rentAmount",       type: "number", placeholder: "Rent amount" },
-                          { label: "Advance Paid (₹)",   key: "advanceAmount",    type: "number", placeholder: "0" },
+                          { label: "Advance Amount (₹)", key: "advanceAmount",    type: "number", placeholder: "0" },
                           { label: "Joining Date",       key: "joiningDate",      type: "date",   placeholder: "" },
                           { label: "Permanent Address",  key: "permanentAddress", type: "text",   placeholder: "Permanent address" },
                         ].map(({ label, key, type, placeholder }) => {
@@ -640,7 +648,9 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
                         ["Email",             tenant?.email],
                         ["Joining Date",      fmtDate(tenant?.joiningDate)],
                         ["Monthly Rent",      fmt(tenant?.rentAmount)],
-                        ["Advance Paid",      fmt(advanceAmount)],
+                        ["Advance Expected",  fmt(advanceAmount)],
+                        ["Advance Paid",      fmt(paidAdvanceAmount)],
+                        ["Advance Pending",   fmt(pendingAdvanceAmount)],
                         ["Permanent Address", tenant?.permanentAddress],
                         buildingDetails && ["Building",  buildingDetails.buildingName],
                         buildingDetails && ["Floor",     `Floor ${buildingDetails.floorNumber}`],

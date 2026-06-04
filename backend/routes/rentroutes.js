@@ -61,11 +61,15 @@ function getAllCyclesSinceJoining(joiningDate, now = new Date(), lookaheadMs = 0
 async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
   const now = new Date();
   const allCycles = getAllCyclesSinceJoining(tenant.joiningDate, now, lookaheadMs);
+  const advanceAmount = Number(tenant.advanceAmount || 0);
+  const paidAdvanceAmount = Number(tenant.paidAdvanceAmount || 0);
+  const pendingAdvanceAmount = Math.max(advanceAmount - paidAdvanceAmount, 0);
 
   if (allCycles.length === 0) {
     return {
       currentRecord: null, remaining: 0, pendingMonths: [], arrearsTotal: 0,
-      totalAccumulatedDue: 0, hasPreviousPending: false, pendingMonthsCount: 0,
+      advanceAmount, paidAdvanceAmount, pendingAdvanceAmount,
+      totalAccumulatedDue: pendingAdvanceAmount, hasPreviousPending: false, pendingMonthsCount: 0,
       isOverdue: false, daysOverdue: null, daysUntilDue: null, dueDate: null,
     };
   }
@@ -112,7 +116,10 @@ async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
     remaining: currentRemaining,
     pendingMonths,
     arrearsTotal,
-    totalAccumulatedDue: arrearsTotal + currentRemaining,
+    advanceAmount,
+    paidAdvanceAmount,
+    pendingAdvanceAmount,
+    totalAccumulatedDue: arrearsTotal + currentRemaining + pendingAdvanceAmount,
     hasPreviousPending: pendingMonths.length > 0,
     pendingMonthsCount: pendingMonths.length,
     isOverdue,
@@ -156,6 +163,9 @@ function toResponseItem(item) {
     remaining:           item.remaining,
     pendingMonths:       item.pendingMonths,
     arrearsTotal:        item.arrearsTotal,
+    advanceAmount:       item.advanceAmount,
+    paidAdvanceAmount:   item.paidAdvanceAmount,
+    pendingAdvanceAmount:item.pendingAdvanceAmount,
     totalAccumulatedDue: item.totalAccumulatedDue,
     hasPreviousPending:  item.hasPreviousPending,
     pendingMonthsCount:  item.pendingMonthsCount,
@@ -166,10 +176,10 @@ function toResponseItem(item) {
   };
 }
 
-function isDueAlert({ hasPreviousPending, remaining, isOverdue, daysUntilDue }) {
+function isDueAlert({ hasPreviousPending, remaining, isOverdue, daysUntilDue, pendingAdvanceAmount }) {
   const owesCurrent = remaining > 0;
   const currentIsDueSoonOrOverdue = isOverdue || (daysUntilDue !== null && daysUntilDue <= 2);
-  return hasPreviousPending || (owesCurrent && currentIsDueSoonOrOverdue);
+  return (pendingAdvanceAmount || 0) > 0 || hasPreviousPending || (owesCurrent && currentIsDueSoonOrOverdue);
 }
 
 function normalizePaymentStatusFilter(value) {
@@ -178,7 +188,7 @@ function normalizePaymentStatusFilter(value) {
 
 function matchesPaymentStatusFilter(item, filter) {
   if (filter === "all") return true;
-  if (filter === "previous") return item.hasPreviousPending;
+  if (filter === "previous") return item.hasPreviousPending || (item.pendingAdvanceAmount || 0) > 0;
   if (filter === "current") return !item.hasPreviousPending && item.remaining > 0 && item.isOverdue;
   if (filter === "upcoming") {
     return !item.hasPreviousPending && item.remaining > 0 && !item.isOverdue && item.daysUntilDue !== null && item.daysUntilDue <= 2;
@@ -508,6 +518,46 @@ function buildPartialPaymentEmail({ tenant, record, paymentAmount, buildingDetai
 }
 
 // ── GET /due (Paginated + Global Stats) ──────────────────────────────────────────
+function buildAdvancePaymentEmail({ tenant, paymentAmount, pendingAdvanceAmount, buildingDetails }) {
+  const accentColor = pendingAdvanceAmount > 0 ? "#d97706" : "#276749";
+  const bodyHtml = `
+    <p class="greeting">Thank you, ${tenant.name}!</p>
+    <p class="sub-text">
+      We have received your advance payment of <strong style="color:#276749;">${fmtINR(paymentAmount)}</strong>.
+      ${pendingAdvanceAmount > 0
+        ? `Your remaining advance balance is <strong style="color:#d97706;">${fmtINR(pendingAdvanceAmount)}</strong>.`
+        : "Your advance amount is now fully paid."}
+    </p>
+    <div class="amount-box">
+      <div class="amount-label">${pendingAdvanceAmount > 0 ? "Advance Balance Remaining" : "Advance Payment Complete"}</div>
+      <div class="amount-value">${pendingAdvanceAmount > 0 ? fmtINR(pendingAdvanceAmount) : fmtINR(paymentAmount)}</div>
+      <div><span class="status-pill">${pendingAdvanceAmount > 0 ? "Partially Paid" : "Paid in Full"}</span></div>
+    </div>
+    <div class="section-title">Payment Summary</div>
+    <div class="info-card">
+      <div class="info-card-header"><span class="info-card-header-icon">₹</span><span class="info-card-header-label">Advance Details</span></div>
+      <div class="info-row"><span class="info-label">This Payment</span><span class="info-value" style="color:#276749;">+ ${fmtINR(paymentAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Total Advance Expected</span><span class="info-value">${fmtINR(tenant.advanceAmount || 0)}</span></div>
+      <div class="info-row"><span class="info-label">Advance Paid So Far</span><span class="info-value">${fmtINR(tenant.paidAdvanceAmount || 0)}</span></div>
+      <div class="info-row"><span class="info-label">Balance Remaining</span><span class="info-value accent">${fmtINR(pendingAdvanceAmount)}</span></div>
+    </div>
+    ${buildTenantDetailsSection(tenant, accentColor)}
+    ${buildRoomAllocationSection(buildingDetails)}
+    <hr class="divider" />
+    <div class="note-box"><strong>Keep this as your advance payment record.</strong></div>`;
+
+  return {
+    subject: `Advance Payment Received - ${fmtINR(paymentAmount)}`,
+    html: emailWrapper({
+      accentColor,
+      icon: "₹",
+      title: "Advance Payment Confirmed",
+      badgeLabel: pendingAdvanceAmount > 0 ? "Partial Advance" : "Advance Paid",
+      bodyHtml,
+    })
+  };
+}
+
 router.get("/due", auth, async (req, res) => {
   try {
     const page = 1;
@@ -516,7 +566,7 @@ router.get("/due", auth, async (req, res) => {
     const tenants = await Tenant.find(
       { owner: req.user.id, status: "Active" },
       {
-        _id: 1, name: 1, phone: 1, email: 1, joiningDate: 1, rentAmount: 1, advanceAmount: 1,
+        _id: 1, name: 1, phone: 1, email: 1, joiningDate: 1, rentAmount: 1, advanceAmount: 1, paidAdvanceAmount: 1,
         buildingId: 1, floorId: 1, roomId: 1, bedId: 1,
         allocationInfo: 1, documents: 1,
         fatherName: 1, fatherPhone: 1, permanentAddress: 1, status: 1,
@@ -719,12 +769,47 @@ router.get("/tenant/:tenantId", auth, async (req, res) => {
 
 router.post("/pay", auth, async (req, res) => {
   try {
-    const { tenantId, amount, note, monthYear } = req.body;
+    const { tenantId, amount, note, monthYear, paymentType } = req.body;
     if (!tenantId || !amount || amount <= 0)
       return res.status(400).json({ message: "Valid amount required." });
 
     const tenant = await Tenant.findOne({ _id: tenantId, owner: req.user.id });
     if (!tenant) return res.status(404).json({ message: "Tenant not found." });
+
+    if (paymentType === "advance" || monthYear === "__advance__") {
+      const pendingAdvance = Math.max(Number(tenant.advanceAmount || 0) - Number(tenant.paidAdvanceAmount || 0), 0);
+      if (pendingAdvance <= 0) return res.status(400).json({ message: "Advance amount is already paid." });
+
+      const actualPay = Math.min(Number(amount), pendingAdvance);
+      tenant.paidAdvanceAmount = Number(tenant.paidAdvanceAmount || 0) + actualPay;
+      await tenant.save();
+
+      await logActivity(
+        req.user.id,
+        "PAYMENT",
+        "Rent",
+        `Received advance payment of ₹${actualPay} from ${tenant.name}`
+      );
+
+      const remainingAdvance = Math.max(Number(tenant.advanceAmount || 0) - Number(tenant.paidAdvanceAmount || 0), 0);
+      if (tenant.email) {
+        try {
+          const buildingDetails = await getBuildingDetailsForTenant(tenant);
+          const emailTemplate = buildAdvancePaymentEmail({ tenant, paymentAmount: actualPay, pendingAdvanceAmount: remainingAdvance, buildingDetails });
+          await sendBrevoEmail(tenant.email, tenant.name, emailTemplate.subject, emailTemplate.html);
+        } catch (e) {
+          console.error("Advance email failed:", e.message);
+        }
+      }
+
+      return res.json({
+        message: `Advance payment of ₹${actualPay} recorded.`,
+        tenant,
+        paymentType: "advance",
+        paidAmount: actualPay,
+        pendingAdvanceAmount: remainingAdvance,
+      });
+    }
 
     let key = monthYear;
     if (!key) {
@@ -789,7 +874,7 @@ router.post("/send-reminder", auth, async (req, res) => {
     if (!tenant?.email) return res.status(422).json({ message: "No email." });
 
     const summary = await buildTenantSummary(tenant, req.user.id, FIVE_DAYS_MS);
-    if (summary.currentRecord?.status === "Paid" && !summary.hasPreviousPending) {
+    if (summary.currentRecord?.status === "Paid" && !summary.hasPreviousPending && !(summary.pendingAdvanceAmount > 0)) {
       return res.status(400).json({ message: "Rent already paid." });
     }
 
