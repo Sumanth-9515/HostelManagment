@@ -3,20 +3,20 @@
 
 export const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
-// ── Token helpers (sessionStorage — consistent everywhere) ────────────────
+// ── Token helpers (localStorage — consistent everywhere) ────────────────
 // FIX: these were already correct; added null-safety and a setter/clearer.
-export const token      = ()          => sessionStorage.getItem("token") ?? "";
+export const token      = ()          => localStorage.getItem("token") ?? "";
 export const getUser    = ()          => {
-  try { return JSON.parse(sessionStorage.getItem("user") ?? "null"); }
+  try { return JSON.parse(localStorage.getItem("user") ?? "null"); }
   catch { return null; }
 };
 export const setSession = (token, user) => {
-  sessionStorage.setItem("token", token);
-  sessionStorage.setItem("user",  JSON.stringify(user));
+  localStorage.setItem("token", token);
+  localStorage.setItem("user",  JSON.stringify(user));
 };
 export const clearSession = () => {
-  sessionStorage.removeItem("token");
-  sessionStorage.removeItem("user");
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
 };
 
 // ── Auth headers for manual fetch calls ───────────────────────────────────
@@ -27,7 +27,6 @@ export const authHeaders = () => ({
 
 // ── Drop-in authenticated fetch wrapper ───────────────────────────────────
 // Usage: const data = await authFetch("/buildings");
-// On 401 it clears session and reloads to /login automatically.
 export const authFetch = async (path, options = {}) => {
   const res = await fetch(`${API}${path}`, {
     ...options,
@@ -36,13 +35,6 @@ export const authFetch = async (path, options = {}) => {
       ...(options.headers ?? {}),
     },
   });
-
-  // Auto-logout on expired/invalid token
-  if (res.status === 401) {
-    clearSession();
-    window.location.href = "/login";
-    return null;
-  }
 
   return res;
 };

@@ -170,16 +170,16 @@ export function Modal({ open, onClose, title, children }) {
   );
 }
 
-// ─── Session helpers (sessionStorage) ─────────────────────────────────────────
+// ─── Session helpers (localStorage) ─────────────────────────────────────────
 export const getSession = () => {
   try {
-    return JSON.parse(sessionStorage.getItem("user") || "null");
+    return JSON.parse(localStorage.getItem("user") || "null");
   } catch {
     return null;
   }
 };
 
 export const clearSession = () => {
-  sessionStorage.removeItem("token");
-  sessionStorage.removeItem("user");
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
 };

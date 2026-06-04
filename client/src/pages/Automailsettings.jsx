@@ -8,7 +8,7 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const authHeader = () => ({
   "Content-Type": "application/json",
-  Authorization: `Bearer ${sessionStorage.getItem("token")}`,
+  Authorization: `Bearer ${localStorage.getItem("token")}`,
 });
 
 function fmtDateTime(d) {

@@ -31,18 +31,26 @@ import MasterPlanMonitor from "./pages/master/Masterplanmonitor.jsx";
 import AutoMailSettings from "./pages/Automailsettings.jsx";
 
 // ── Auth guards ───────────────────────────────────────────────────────────────
+const storedUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null") || {};
+  } catch {
+    return {};
+  }
+};
+
 function RequireUser({ children }) {
-  const user  = JSON.parse(sessionStorage.getItem("user")  || "{}");
-  const token = sessionStorage.getItem("token");
-  if (!token || !user?.id)          return <Navigate to="/login"            replace />;
+  const user  = storedUser();
+  const token = localStorage.getItem("token");
+  if (!token)                      return <Navigate to="/login"            replace />;
   if (user.role === "master")       return <Navigate to="/master/dashboard" replace />;
   return children;
 }
 
 function RequireMaster({ children }) {
-  const user  = JSON.parse(sessionStorage.getItem("user")  || "{}");
-  const token = sessionStorage.getItem("token");
-  if (!token || !user?.id)          return <Navigate to="/login"     replace />;
+  const user  = storedUser();
+  const token = localStorage.getItem("token");
+  if (!token)                      return <Navigate to="/login"     replace />;
   if (user.role !== "master")       return <Navigate to="/dashboard" replace />;
   return children;
 }

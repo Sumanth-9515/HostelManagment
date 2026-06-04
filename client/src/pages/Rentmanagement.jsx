@@ -9,7 +9,7 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const authHeader = () => ({
   "Content-Type": "application/json",
-  Authorization: `Bearer ${sessionStorage.getItem("token")}`,
+  Authorization: `Bearer ${localStorage.getItem("token")}`,
 });
 
 const fmt = (n) =>
@@ -830,7 +830,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
 
       const r = await fetch(`${API}/tenants/${tenantId}`, {
         method: "PUT",
-        headers: { Authorization: `Bearer ${sessionStorage.getItem("token")}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
         body: formData,
       });
       const d = await r.json();
@@ -1584,6 +1584,7 @@ export default function RentManagement() {
   const filteredCount = isFilterMode && filteredItems ? filteredItems.length : 0;
   const paymentStatusOptions = [
     { value: "previous", label: "Previous months overdues" },
+    { value: "advance-pending", label: "Advance pending" },
     { value: "current", label: "Current month dues" },
     { value: "upcoming", label: "Upcoming dues" },
     { value: "all", label: "All" },

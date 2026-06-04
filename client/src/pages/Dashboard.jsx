@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const API  = `${BASE}`;
-const getToken = () => sessionStorage.getItem("token") || "";
+const getToken = () => localStorage.getItem("token") || "";
 
 const authHeaders = () => ({
   "Content-Type": "application/json",
@@ -147,7 +147,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("user");
+    const stored = localStorage.getItem("user");
     if (stored) {
       try { setOwner(JSON.parse(stored)); } catch { setOwner(decodeJWT(getToken())); }
     } else {

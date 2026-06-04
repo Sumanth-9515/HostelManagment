@@ -183,12 +183,13 @@ function isDueAlert({ hasPreviousPending, remaining, isOverdue, daysUntilDue, pe
 }
 
 function normalizePaymentStatusFilter(value) {
-  return ["previous", "current", "upcoming", "all"].includes(value) ? value : "previous";
+  return ["previous", "advance", "advance-pending", "current", "upcoming", "all"].includes(value) ? value : "all";
 }
 
 function matchesPaymentStatusFilter(item, filter) {
   if (filter === "all") return true;
-  if (filter === "previous") return item.hasPreviousPending || (item.pendingAdvanceAmount || 0) > 0;
+  if (filter === "previous") return item.hasPreviousPending;
+  if (filter === "advance" || filter === "advance-pending") return (item.pendingAdvanceAmount || 0) > 0;
   if (filter === "current") return !item.hasPreviousPending && item.remaining > 0 && item.isOverdue;
   if (filter === "upcoming") {
     return !item.hasPreviousPending && item.remaining > 0 && !item.isOverdue && item.daysUntilDue !== null && item.daysUntilDue <= 2;

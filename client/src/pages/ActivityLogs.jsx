@@ -145,7 +145,7 @@ const ActivityLogs = () => {
   const fetchLogs = async (currentPage, currentFilter, reset = false) => {
     try {
       setLoading(true);
-      const token = sessionStorage.getItem("token");
+      const token = localStorage.getItem("token");
       if (!token) {
         console.error("❌ No token found!");
         setLoading(false);

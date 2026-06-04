@@ -48,8 +48,8 @@ export default function RegisterPage() {
       }
 
       if (data.token && data.user) {
-        sessionStorage.setItem("token", data.token);
-        sessionStorage.setItem("user",  JSON.stringify(data.user));
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user",  JSON.stringify(data.user));
         navigate(data.user.role === "master" ? "/master/dashboard" : "/dashboard", { replace: true });
       } else {
         navigate("/login", { replace: true });

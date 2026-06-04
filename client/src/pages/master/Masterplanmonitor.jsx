@@ -234,7 +234,7 @@ export default function MasterPlanMonitor() {
   // Edit modal state
   const [editUser, setEditUser] = useState(null);
 
-  const token = sessionStorage.getItem("token");
+  const token = localStorage.getItem("token");
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
   const load = async () => {

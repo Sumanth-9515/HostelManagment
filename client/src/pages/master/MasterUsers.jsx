@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { API } from "../api.js";
 
-const token = () => sessionStorage.getItem("token");
+const token = () => localStorage.getItem("token");
 
 export default function MasterOwners() {
   const [owners,   setOwners]   = useState([]);
@@ -162,7 +162,7 @@ export default function MasterOwners() {
               <Link to="/master/owners"       className="mo-navbtn active">👥 Owners</Link>
               <Link to="/master/manage-logins" className="mo-navbtn">🔐 Manage Logins</Link>
             </div>
-            <button className="mo-logout" onClick={() => { sessionStorage.clear(); navigate("/login", { replace: true }); }}>
+            <button className="mo-logout" onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("user"); navigate("/login", { replace: true }); }}>
               Logout
             </button>
           </div>

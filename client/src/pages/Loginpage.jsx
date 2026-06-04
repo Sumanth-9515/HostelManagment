@@ -33,13 +33,15 @@ export default function LoginPage() {
 
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 40);
-    const tk   = sessionStorage.getItem("token");
-    const user = sessionStorage.getItem("user");
-    if (tk && user) {
+    const tk   = localStorage.getItem("token");
+    const user = localStorage.getItem("user");
+    if (tk) {
       try {
-        const parsed = JSON.parse(user);
+        const parsed = JSON.parse(user || "null") || {};
         navigate(parsed.role === "master" ? "/master/dashboard" : "/dashboard", { replace: true });
-      } catch { sessionStorage.clear(); }
+      } catch {
+        navigate("/dashboard", { replace: true });
+      }
     }
     return () => clearTimeout(t);
   }, [navigate]);
@@ -80,8 +82,8 @@ export default function LoginPage() {
       }
       if (!res.ok) return setError(data.message || "Login failed. Please try again.");
 
-      sessionStorage.setItem("token", data.token);
-      sessionStorage.setItem("user",  JSON.stringify(data.user));
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user",  JSON.stringify(data.user));
       navigate(data.user.role === "master" ? "/master/dashboard" : "/dashboard", { replace: true });
     } catch {
       setError("Cannot connect to server. Make sure the backend is running.");

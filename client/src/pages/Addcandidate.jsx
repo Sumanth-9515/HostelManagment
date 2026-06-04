@@ -258,7 +258,7 @@ if (form.emailError) {
     formData.append("passportPhoto", passportPhoto);
 
     try {
-      const token = sessionStorage.getItem("token");
+      const token = localStorage.getItem("token");
       if (!token) {
         throw new Error("No authentication token found");
       }

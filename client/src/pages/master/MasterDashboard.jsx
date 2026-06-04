@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { API } from "../api.js";
 
-const token = () => sessionStorage.getItem("token");
+const token = () => localStorage.getItem("token");
 
 export default function MasterDashboard() {
   const [stats,   setStats]   = useState(null);
@@ -126,7 +126,7 @@ export default function MasterDashboard() {
               <Link to="/master/users"      className="md-navbtn">👥 Owners</Link>
               <Link to="/master/logins" className="md-navbtn">🔐 Manage Logins</Link>
             </div>
-            <button className="md-logout" onClick={() => { sessionStorage.clear(); navigate("/login", { replace: true }); }}>
+            <button className="md-logout" onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("user"); navigate("/login", { replace: true }); }}>
               Logout
             </button>
           </div>

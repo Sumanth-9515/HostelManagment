@@ -9,7 +9,7 @@ export default function MasterApprovals() {
   const [success, setSuccess] = useState("");
   const [acting,  setActing]  = useState(null);
 
-  const token   = sessionStorage.getItem("token");
+  const token   = localStorage.getItem("token");
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
   const loadPending = async () => {

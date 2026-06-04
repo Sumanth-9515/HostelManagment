@@ -14,7 +14,7 @@ export default function MasterPlanSettings() {
   const [editForm,   setEditForm]   = useState({ name: "", price: "", days: "", beds: "" });
   const [editSaving, setEditSaving] = useState(false);
 
-  const token   = sessionStorage.getItem("token");
+  const token   = localStorage.getItem("token");
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
   const loadPlans = async () => {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { API } from "../api.js";
 
-const token = () => sessionStorage.getItem("token");
+const token = () => localStorage.getItem("token");
 
 export default function ManageLogins() {
   const [owners,   setOwners]   = useState([]);   // { ...user, stats, loginStatus, _pending }
@@ -210,7 +210,7 @@ export default function ManageLogins() {
               <Link to="/master/owners"       className="ml-navbtn">👥 Owners</Link>
               <Link to="/master/manage-logins" className="ml-navbtn active">🔐 Manage Logins</Link>
             </div>
-            <button className="ml-logout" onClick={() => { sessionStorage.clear(); navigate("/login", { replace: true }); }}>
+            <button className="ml-logout" onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("user"); navigate("/login", { replace: true }); }}>
               Logout
             </button>
           </div>
