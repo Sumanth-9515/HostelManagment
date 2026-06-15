@@ -29,6 +29,9 @@ import MasterApprovals from "./pages/master/Masterapprovals.jsx";
 import LandingPage from "./pages/Landingpage.jsx";
 import MasterPlanMonitor from "./pages/master/Masterplanmonitor.jsx";
 import AutoMailSettings from "./pages/Automailsettings.jsx";
+import PaymentRequests from "./pages/Paymentrequests.jsx";
+import PaymentRequestForm from "./pages/Paymentrequestform.jsx";
+import PaymentRequestAction from "./pages/Paymentrequestaction.jsx";
 
 // ── Auth guards ───────────────────────────────────────────────────────────────
 const storedUser = () => {
@@ -68,6 +71,8 @@ export default function App() {
       {/* ── Tenant self-registration (no auth — uses link token in URL) ── */}
       {/* Owner shares: http://yourapp/tenant-register/<JWT>               */}
       <Route path="/tenant-register/:token" element={<TenantOnboardingForm />} />
+      <Route path="/payment-request-form/:ownerToken" element={<PaymentRequestForm />} />
+      <Route path="/payment-request-action/:token" element={<PaymentRequestAction />} />
 
       {/* ── Regular user routes wrapped in Layout ──────────────────────── */}
       <Route path="/dashboard" element={
@@ -96,6 +101,9 @@ export default function App() {
       } />
                     <Route path="/automail-settings" element={
         <RequireUser><Layout><AutoMailSettings/></Layout></RequireUser>
+      } />
+                    <Route path="/payment-requests" element={
+        <RequireUser><Layout><PaymentRequests/></Layout></RequireUser>
       } />
 
       {/* ── Master routes wrapped in MasterLayout ──────────────────────── */}

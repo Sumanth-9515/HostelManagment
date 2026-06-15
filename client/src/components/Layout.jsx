@@ -40,7 +40,8 @@ const NAV = [
   to: "/automail-settings",   
   label: "AutoMail Settings",   
   icon: <Mail size={20} /> 
-}
+},
+  { to: "/payment-requests",   label: "Payment Requests",    icon: <ReceiptIndianRupee size={20} /> },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

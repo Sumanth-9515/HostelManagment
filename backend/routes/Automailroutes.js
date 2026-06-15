@@ -49,7 +49,9 @@ async function sendBrevoEmail(toEmail, toName, subject, htmlContent) {
     });
     return data;
   } catch (err) {
-    throw new Error(err.response ? err.response.data.message || err.message : err.message);
+    const brevoMessage = err.response?.data?.message || err.message || "Email send failed";
+    console.error("[Brevo] Auto-mail failed:", brevoMessage);
+    throw new Error(brevoMessage);
   }
 }
 
@@ -90,6 +92,19 @@ function getAllCyclesSinceJoining(joiningDate, now = new Date(), lookaheadMs = 0
   return cycles;
 }
 
+async function syncExpectedRent(record, expectedRent) {
+  const normalizedRent = Number(expectedRent || 0);
+  if (!record || normalizedRent <= 0 || Number(record.rentAmount || 0) === normalizedRent) return record;
+  if (record.rentAmountLocked) return record;
+
+  record.rentAmount = normalizedRent;
+  if (record.paidAmount >= normalizedRent) record.status = "Paid";
+  else if (record.paidAmount > 0) record.status = "Partial";
+  else record.status = "Due";
+  await record.save();
+  return record;
+}
+
 async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
   const now = new Date();
   const allCycles = getAllCyclesSinceJoining(tenant.joiningDate, now, lookaheadMs);
@@ -116,10 +131,12 @@ async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
         owner: ownerId, tenantId: tenant._id, monthYear: key, dueDate,
         rentAmount: tenant.rentAmount, paidAmount: 0, status: "Due", payments: [],
       });
+    } else {
+      record = await syncExpectedRent(record, tenant.rentAmount);
     }
     if (record.status !== "Paid") {
       pendingMonths.push(record.toObject ? record.toObject() : record);
-      arrearsTotal += record.rentAmount - record.paidAmount;
+      arrearsTotal += Math.max(record.rentAmount - record.paidAmount, 0);
     }
   }
 
@@ -131,9 +148,11 @@ async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
       dueDate: currentCycle.dueDate, rentAmount: tenant.rentAmount,
       paidAmount: 0, status: "Due", payments: [],
     });
+  } else {
+    currentRecord = await syncExpectedRent(currentRecord, tenant.rentAmount);
   }
 
-  const currentRemaining = currentRecord.rentAmount - currentRecord.paidAmount;
+  const currentRemaining = Math.max(currentRecord.rentAmount - currentRecord.paidAmount, 0);
   const msUntilDue = currentRecord.dueDate.getTime() - now.getTime();
   const isOverdue = msUntilDue < 0;
   const daysOverdue = isOverdue ? Math.ceil(Math.abs(msUntilDue) / 86400000) : null;

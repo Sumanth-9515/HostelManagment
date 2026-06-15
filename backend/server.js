@@ -14,6 +14,7 @@ import rentRoutes from "./routes/rentroutes.js";
 import activityRoutes from "./routes/activityRoutes.js";
 import planRoutes from "./routes/planroutes.js";
 import approvalRoutes from "./routes/approvalroutes.js";
+import paymentRequestRoutes from "./routes/paymentRequestRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import autoMailRouter, { initAllCronJobs } from "./routes/Automailroutes.js";
@@ -406,6 +407,7 @@ app.use("/api/activities", activityRoutes);
 app.use("/api/plans",      planRoutes);
 app.use("/api/approval",   approvalRoutes);
 app.use("/api/auto-mail", autoMailRouter);
+app.use("/api/payment-requests", paymentRequestRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));

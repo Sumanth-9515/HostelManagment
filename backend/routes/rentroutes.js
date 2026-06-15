@@ -58,7 +58,21 @@ function getAllCyclesSinceJoining(joiningDate, now = new Date(), lookaheadMs = 0
   return cycles;
 }
 
-async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
+async function syncExpectedRent(record, expectedRent, force = false) {
+  const normalizedRent = Number(expectedRent || 0);
+  if (!record || normalizedRent <= 0 || Number(record.rentAmount || 0) === normalizedRent) return record;
+  if (record.rentAmountLocked) return record;
+  if (!force && record.status === "Paid") return record;
+
+  record.rentAmount = normalizedRent;
+  if (record.paidAmount >= normalizedRent) record.status = "Paid";
+  else if (record.paidAmount > 0) record.status = "Partial";
+  else record.status = "Due";
+  await record.save();
+  return record;
+}
+
+export async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
   const now = new Date();
   const allCycles = getAllCyclesSinceJoining(tenant.joiningDate, now, lookaheadMs);
   const advanceAmount = Number(tenant.advanceAmount || 0);
@@ -88,10 +102,12 @@ async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
         owner: ownerId, tenantId: tenant._id, monthYear: key, dueDate,
         rentAmount: tenant.rentAmount, paidAmount: 0, status: "Due", payments: [],
       });
+    } else {
+      record = await syncExpectedRent(record, tenant.rentAmount, true);
     }
     if (record.status !== "Paid") {
       pendingMonths.push(record.toObject ? record.toObject() : record);
-      arrearsTotal += record.rentAmount - record.paidAmount;
+      arrearsTotal += Math.max(record.rentAmount - record.paidAmount, 0);
     }
   }
 
@@ -103,9 +119,11 @@ async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
       dueDate: currentCycle.dueDate, rentAmount: tenant.rentAmount,
       paidAmount: 0, status: "Due", payments: [],
     });
+  } else {
+    currentRecord = await syncExpectedRent(currentRecord, tenant.rentAmount, true);
   }
 
-  const currentRemaining = currentRecord.rentAmount - currentRecord.paidAmount;
+  const currentRemaining = Math.max(currentRecord.rentAmount - currentRecord.paidAmount, 0);
   const msUntilDue = currentRecord.dueDate.getTime() - now.getTime();
   const isOverdue = msUntilDue < 0;
   const daysOverdue = isOverdue ? Math.ceil(Math.abs(msUntilDue) / 86400000) : null;
@@ -129,7 +147,7 @@ async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
   };
 }
 
-async function getBuildingDetailsForTenant(tenant) {
+export async function getBuildingDetailsForTenant(tenant) {
   if (!tenant.buildingId) return null;
   
   const building = await Building.findById(tenant.buildingId).lean();
@@ -625,7 +643,10 @@ router.get("/due", auth, async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ message: "Server error.", error: err.message });
+    res.status(err.statusCode || 500).json({
+      message: err.statusCode ? err.message : "Server error.",
+      error: err.message,
+    });
   }
 });
 
@@ -684,9 +705,112 @@ async function sendBrevoEmail(toEmail, toName, subject, htmlContent) {
       headers: { "Content-Type": "application/json", "api-key": apiKey },
     });
     return data;
-  } catch {
-    throw new Error("Email send failed");
+  } catch (err) {
+    const brevoMessage = err.response?.data?.message || err.message || "Email send failed";
+    console.error("[Brevo] Rent email failed:", brevoMessage);
+    throw new Error(brevoMessage);
   }
+}
+
+export async function sendSimpleBrevoEmail(toEmail, toName, subject, htmlContent) {
+  return sendBrevoEmail(toEmail, toName, subject, htmlContent);
+}
+
+export async function recordTenantPayment({ ownerId, tenantId, amount, note = "", monthYear, paymentType, sendEmail = true }) {
+  if (!tenantId || !amount || Number(amount) <= 0) {
+    const err = new Error("Valid amount required.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const tenant = await Tenant.findOne({ _id: tenantId, owner: ownerId });
+  if (!tenant) {
+    const err = new Error("Tenant not found.");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (paymentType === "advance" || monthYear === "__advance__") {
+    const pendingAdvance = Math.max(Number(tenant.advanceAmount || 0) - Number(tenant.paidAdvanceAmount || 0), 0);
+    if (pendingAdvance <= 0) {
+      const err = new Error("Advance amount is already paid.");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const actualPay = Math.min(Number(amount), pendingAdvance);
+    tenant.paidAdvanceAmount = Number(tenant.paidAdvanceAmount || 0) + actualPay;
+    await tenant.save();
+    await logActivity(ownerId, "PAYMENT", "Rent", `Received advance payment of â‚¹${actualPay} from ${tenant.name}`);
+
+    const remainingAdvance = Math.max(Number(tenant.advanceAmount || 0) - Number(tenant.paidAdvanceAmount || 0), 0);
+    if (sendEmail && tenant.email) {
+      try {
+        const buildingDetails = await getBuildingDetailsForTenant(tenant);
+        const emailTemplate = buildAdvancePaymentEmail({ tenant, paymentAmount: actualPay, pendingAdvanceAmount: remainingAdvance, buildingDetails });
+        await sendBrevoEmail(tenant.email, tenant.name, emailTemplate.subject, emailTemplate.html);
+      } catch (e) {
+        console.error("Advance email failed:", e.message);
+      }
+    }
+
+    return {
+      message: `Advance payment of â‚¹${actualPay} recorded.`,
+      tenant,
+      paymentType: "advance",
+      paidAmount: actualPay,
+      pendingAdvanceAmount: remainingAdvance,
+    };
+  }
+
+  let key = monthYear;
+  if (!key) {
+    const allCycles = getAllCyclesSinceJoining(tenant.joiningDate, new Date(), 0);
+    const cycle = allCycles[allCycles.length - 1];
+    key = cycle ? `${cycle.year}-${String(cycle.month + 1).padStart(2, "0")}` : monthYearKey(new Date());
+  }
+
+  let record = await RentPayment.findOne({ tenantId, monthYear: key });
+  if (!record) {
+    const parts = key.split("-");
+    const dueDate = getDueDateForCycle(tenant.joiningDate, parseInt(parts[0]), parseInt(parts[1]) - 1);
+    record = await RentPayment.create({
+      owner: ownerId, tenantId, monthYear: key, dueDate,
+      rentAmount: tenant.rentAmount, paidAmount: 0, status: "Due", payments: [],
+    });
+  }
+
+  const remaining = Math.max(record.rentAmount - record.paidAmount, 0);
+  if (remaining <= 0) {
+    const err = new Error("Selected month is already paid.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const actualPay = Math.min(Number(amount), remaining);
+  record.paidAmount += actualPay;
+  record.payments.push({ amount: actualPay, paidAt: new Date(), note });
+
+  if (record.paidAmount >= record.rentAmount) record.status = "Paid";
+  else if (record.paidAmount > 0) record.status = "Partial";
+
+  await record.save();
+  await logActivity(ownerId, "PAYMENT", "Rent", `Received rent payment of â‚¹${actualPay} from ${tenant.name}`);
+
+  if (sendEmail && tenant.email) {
+    try {
+      const buildingDetails = await getBuildingDetailsForTenant(tenant);
+      const emailTemplate =
+        record.status === "Paid"
+          ? buildFullPaymentEmail({ tenant, record, paymentAmount: actualPay, buildingDetails })
+          : buildPartialPaymentEmail({ tenant, record, paymentAmount: actualPay, buildingDetails });
+      await sendBrevoEmail(tenant.email, tenant.name, emailTemplate.subject, emailTemplate.html);
+    } catch (e) {
+      console.error("Email failed:", e.message);
+    }
+  }
+
+  return { message: `Payment of â‚¹${actualPay} recorded.`, record, tenant, paidAmount: actualPay };
 }
 
 router.get("/all", auth, async (req, res) => {
@@ -771,6 +895,25 @@ router.get("/tenant/:tenantId", auth, async (req, res) => {
 router.post("/pay", auth, async (req, res) => {
   try {
     const { tenantId, amount, note, monthYear, paymentType } = req.body;
+    let result;
+    try {
+      result = await recordTenantPayment({
+        ownerId: req.user.id,
+        tenantId,
+        amount,
+        note,
+        monthYear,
+        paymentType,
+        sendEmail: true,
+      });
+    } catch (err) {
+      return res.status(err.statusCode || 500).json({
+        message: err.statusCode ? err.message : "Server error.",
+        error: err.message,
+      });
+    }
+    return res.json(result);
+
     if (!tenantId || !amount || amount <= 0)
       return res.status(400).json({ message: "Valid amount required." });
 
@@ -863,6 +1006,58 @@ router.post("/pay", auth, async (req, res) => {
     }
 
     res.json({ message: `Payment of ₹${actualPay} recorded.`, record });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
+router.put("/payment/:recordId", auth, async (req, res) => {
+  try {
+    const { paidAmount, rentAmount, note = "" } = req.body;
+    const correctedPaidAmount = Number(paidAmount);
+    const correctedRentAmount = Number(rentAmount);
+
+    if (Number.isNaN(correctedPaidAmount) || correctedPaidAmount < 0) {
+      return res.status(400).json({ message: "Enter a valid paid amount." });
+    }
+
+    if (Number.isNaN(correctedRentAmount) || correctedRentAmount <= 0) {
+      return res.status(400).json({ message: "Enter a valid monthly rent." });
+    }
+
+    const record = await RentPayment.findOne({ _id: req.params.recordId, owner: req.user.id });
+    if (!record) return res.status(404).json({ message: "Payment record not found." });
+
+    if (correctedPaidAmount > correctedRentAmount) {
+      return res.status(400).json({ message: "Paid amount cannot exceed monthly rent." });
+    }
+
+    const previousPaidAmount = Number(record.paidAmount || 0);
+    const previousRentAmount = Number(record.rentAmount || 0);
+    record.rentAmount = correctedRentAmount;
+    record.rentAmountLocked = true;
+    record.paidAmount = correctedPaidAmount;
+    if (record.paidAmount >= record.rentAmount) record.status = "Paid";
+    else if (record.paidAmount > 0) record.status = "Partial";
+    else record.status = "Due";
+
+    record.payments.push({
+      amount: correctedPaidAmount - previousPaidAmount,
+      paidAt: new Date(),
+      note: note || `Corrected month rent from ${previousRentAmount} to ${correctedRentAmount}; paid amount from ${previousPaidAmount} to ${correctedPaidAmount}`,
+    });
+
+    await record.save();
+
+    const tenant = await Tenant.findOne({ _id: record.tenantId, owner: req.user.id }).lean();
+    await logActivity(
+      req.user.id,
+      "UPDATE",
+      "Rent",
+      `Corrected rent record for ${tenant?.name || "tenant"} (${record.monthYear}): rent ₹${previousRentAmount} to ₹${correctedRentAmount}, paid ₹${previousPaidAmount} to ₹${correctedPaidAmount}`
+    );
+
+    res.json({ message: "Payment record updated.", record });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
   }

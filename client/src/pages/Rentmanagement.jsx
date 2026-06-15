@@ -212,7 +212,11 @@ function EmailReminderButton({ tenantId, tenantEmail, hasPreviousPending = false
       const r = await fetch(`${API}/rent/send-reminder`, {
         method: "POST", headers: authHeader(), body: JSON.stringify({ tenantId }),
       });
-      if (!r.ok) throw new Error("Failed to send email.");
+      if (!r.ok) {
+        let data = {};
+        try { data = await r.json(); } catch {}
+        throw new Error(data.message || "Failed to send email.");
+      }
       setState("sent");
       timerRef.current = setTimeout(() => setState("idle"), 3000);
     } catch (err) {
@@ -224,7 +228,7 @@ function EmailReminderButton({ tenantId, tenantEmail, hasPreviousPending = false
 
   const baseClass = "flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold border transition-all duration-200 select-none";
   if (state === "sent")    return <button disabled className={`${baseClass} bg-emerald-50 border-emerald-200 text-emerald-700 ${className}`}>Sent ✓</button>;
-  if (state === "error")   return <button onClick={handleSend} className={`${baseClass} bg-rose-50 border-rose-200 text-rose-700 ${className}`}>Failed</button>;
+  if (state === "error")   return <button onClick={handleSend} title={errMsg} className={`${baseClass} bg-rose-50 border-rose-200 text-rose-700 ${className}`}>Failed</button>;
   if (state === "sending") return <button disabled className={`${baseClass} bg-violet-50 border-violet-200 text-violet-500 opacity-75 ${className}`}>Sending…</button>;
 
   const btnStyle = hasPreviousPending
@@ -771,6 +775,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   const [showVacateConfirm, setShowVacateConfirm] = useState(false);
   const [vacating, setVacating] = useState(false);
   const [vacateError, setVacateError] = useState("");
+  const [editingPayment, setEditingPayment] = useState(null);
 
   const handleDocFileChange = (field, file) => {
     if (!file) return;
@@ -868,6 +873,12 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
       setVacateError(e.message);
     }
     setVacating(false);
+  };
+
+  const handlePaymentCorrectionSaved = async (result) => {
+    setEditingPayment(null);
+    await load();
+    if (onTenantUpdated) onTenantUpdated(result);
   };
 
   if (!data && !loading) return null;
@@ -1163,6 +1174,15 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
                             <div className="text-left sm:text-right">{pill(rec.status)}<p className="text-gray-500 text-xs mt-1">{fmt(rec.paidAmount)} / {fmt(rec.rentAmount)}</p></div>
+                            {Number(rec.paidAmount || 0) > 0 && (
+                              <button
+                                onClick={() => setEditingPayment(rec)}
+                                className="text-[10px] px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-500 border border-blue-200 text-blue-700 hover:text-white font-bold transition-colors shrink-0"
+                                title="Edit payment"
+                              >
+                                Edit
+                              </button>
+                            )}
                             {isPending && <button onClick={() => onPayNow(tenant._id, [{ monthYear: rec.monthYear, maxAmount: recRemaining, label: fmtMonthYear(rec.dueDate) }], rec.monthYear)} className="text-[10px] px-2 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors shrink-0">Pay {fmt(recRemaining)}</button>}
                           </div>
                         </div>
@@ -1185,11 +1205,93 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
       {showVacateConfirm && <VacateConfirmModal tenantName={tenant?.name} onConfirm={handleVacate} onCancel={() => { setShowVacateConfirm(false); setVacateError(""); }} loading={vacating} />}
       {vacateError && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[80] bg-rose-600 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-semibold">❌ {vacateError}</div>}
       {viewingDoc && <DocumentViewer imageUrl={viewingDoc} onClose={() => setViewingDoc(null)} />}
+      {editingPayment && <EditPaymentModal record={editingPayment} onClose={() => setEditingPayment(null)} onSuccess={handlePaymentCorrectionSaved} />}
     </>
   );
 }
 
 // ─── Pay Modal ────────────────────────────────────────────────────────────────
+function EditPaymentModal({ record, onClose, onSuccess }) {
+  const [monthRentAmount, setMonthRentAmount] = useState(record?.rentAmount ?? 0);
+  const [paidAmount, setPaidAmount] = useState(record?.paidAmount ?? 0);
+  const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef(null);
+  const rentAmount = Number(monthRentAmount || 0);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleSave = async () => {
+    const rentVal = Number(monthRentAmount);
+    const val = Number(paidAmount);
+    if (Number.isNaN(rentVal) || rentVal <= 0) return setError("Enter a valid monthly rent.");
+    if (Number.isNaN(val) || val < 0) return setError("Enter a valid paid amount.");
+    if (val > rentVal) return setError(`Paid amount cannot exceed rent of ${fmt(rentVal)}.`);
+    setLoading(true); setError("");
+    try {
+      const r = await fetch(`${API}/rent/payment/${record._id}`, {
+        method: "PUT",
+        headers: authHeader(),
+        body: JSON.stringify({ rentAmount: rentVal, paidAmount: val, note }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message || "Failed to update payment.");
+      onSuccess(d);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!record) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white">
+          <div>
+            <h3 className="text-gray-900 font-bold">Edit Payment</h3>
+            <p className="text-gray-500 text-xs mt-0.5">{fmtMonthYear(record.dueDate)}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg transition-colors">x</button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-gray-500 text-[11px] uppercase tracking-wide">Monthly Rent</p>
+              <p className="text-gray-900 text-sm font-black mt-1">{fmt(record.rentAmount || 0)}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-gray-500 text-[11px] uppercase tracking-wide">Current Paid</p>
+              <p className="text-emerald-600 text-sm font-black mt-1">{fmt(record.paidAmount || 0)}</p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Correct Monthly Rent For This Month (₹)</label>
+            <input type="number" value={monthRentAmount} onChange={(e) => setMonthRentAmount(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-blue-400" min="1" />
+            <p className="mt-1 text-[11px] text-gray-400">Only this history month will change.</p>
+          </div>
+          <div>
+            <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Correct Paid Amount (₹)</label>
+            <input ref={inputRef} type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSave()} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-blue-400" min="0" max={rentAmount} />
+          </div>
+          <div>
+            <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Reason / Note</label>
+            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-400" placeholder="Wrong entry corrected" />
+          </div>
+          {error && <p className="text-rose-600 text-sm bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
+          <div className="flex gap-3">
+            <button onClick={onClose} disabled={loading} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">Cancel</button>
+            <button onClick={handleSave} disabled={loading} className="flex-1 py-3 rounded-xl font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all text-sm">{loading ? "Saving..." : "Save"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PayModal({ tenantId, payableMonths, initialMonthYear, onClose, onSuccess }) {
   const [selectedMonth, setSelectedMonth] = useState(initialMonthYear || payableMonths[0]?.monthYear);
   const selectedOption = payableMonths.find((m) => m.monthYear === selectedMonth);

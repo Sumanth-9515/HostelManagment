@@ -135,6 +135,47 @@ function VacateConfirmModal({ tenantName, onConfirm, onCancel, loading }) {
 }
 
 // ─── Room Allocator ───────────────────────────────────────────────────────────
+function PermanentDeleteConfirmModal({ tenants, onConfirm, onCancel, loading, error }) {
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white shadow-2xl overflow-hidden">
+        <div className="px-6 pt-6 pb-4">
+          <div className="w-14 h-14 rounded-full bg-rose-100 border-2 border-rose-300 flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl">!</span>
+          </div>
+          <h3 className="text-gray-900 font-bold text-lg text-center mb-1">Permanently Delete?</h3>
+          <p className="text-gray-500 text-sm text-center">
+            These candidate details, rent history, and payment requests will be deleted from the database.
+          </p>
+          <div className="mt-4 max-h-40 overflow-y-auto rounded-xl border border-rose-100 bg-rose-50 p-3">
+            {tenants.map((tenant) => (
+              <p key={tenant._id} className="text-sm font-semibold text-rose-800 py-1">
+                {tenant.name}
+              </p>
+            ))}
+          </div>
+          <p className="text-rose-600 text-xs mt-3 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+            This cannot be undone. Other candidates will not be touched.
+          </p>
+          {error && <p className="text-rose-600 text-sm mt-3">{error}</p>}
+        </div>
+        <div className="flex gap-3 px-6 pb-6">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm transition-colors active:scale-95 disabled:opacity-50"
+          >{loading ? "Deleting..." : "Delete Forever"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RoomAllocator({ onSelect }) {
   const [buildings, setBuildings] = useState([]);
   const [selectedBuilding, setSelectedBuilding] = useState("");
@@ -781,7 +822,7 @@ function CandidateDetailModal({ tenantId, onClose, onCandidateUpdated }) {
 }
 
 // ─── Mobile Card ──────────────────────────────────────────────────────────────
-function CandidateCard({ tenant, rentInfo, onViewMore, onPhotoClick }) {
+function CandidateCard({ tenant, rentInfo, onViewMore, onPhotoClick, selectable = false, selected = false, onToggleSelect, onDelete }) {
   const alloc    = tenant.allocationInfo || {};
   const photo    = tenant.documents?.passportPhoto;
   const initials = tenant.name?.[0]?.toUpperCase();
@@ -800,6 +841,18 @@ function CandidateCard({ tenant, rentInfo, onViewMore, onPhotoClick }) {
       }`} />
 
       <div className="p-4 space-y-3">
+        {selectable && (
+          <label className="flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+            <span>Select for permanent delete</span>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelect}
+              className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+            />
+          </label>
+        )}
+
         {/* Header row */}
         <div className="flex items-center gap-3">
           <div
@@ -944,6 +997,10 @@ export default function CandidatesManagement() {
   const [selectedId, setSelectedId]     = useState(null);
   const [toast, setToast]               = useState("");
   const [refreshKey, setRefreshKey]     = useState(0);
+  const [selectedInactiveIds, setSelectedInactiveIds] = useState([]);
+  const [deleteConfirmTenants, setDeleteConfirmTenants] = useState([]);
+  const [deletingPermanent, setDeletingPermanent] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   // Photo popup from table
   const [tablePhotoPopup, setTablePhotoPopup] = useState(null); // {imageUrl, name}
@@ -1033,6 +1090,7 @@ export default function CandidatesManagement() {
     .filter((t) => t.status === "Active")
     .sort((a, b) => rentRank(a._id) - rentRank(b._id));
   const inactiveList = sourceList.filter((t) => t.status === "Inactive");
+  const inactiveIdsKey = inactiveList.map((tenant) => tenant._id).join("|");
 
   const handleCandidateUpdated = (msg) => {
     setToast(msg || "Updated!");
@@ -1041,6 +1099,58 @@ export default function CandidatesManagement() {
   };
 
   // ── Table header helper ───────────────────────────────────────────────────
+  useEffect(() => {
+    const visibleInactiveIds = new Set(inactiveList.map((tenant) => tenant._id));
+    setSelectedInactiveIds((ids) => {
+      const nextIds = ids.filter((id) => visibleInactiveIds.has(id));
+      return nextIds.length === ids.length ? ids : nextIds;
+    });
+  }, [inactiveIdsKey]);
+
+  const selectedInactiveTenants = inactiveList.filter((tenant) => selectedInactiveIds.includes(tenant._id));
+  const allInactiveSelected = inactiveList.length > 0 && selectedInactiveIds.length === inactiveList.length;
+
+  const toggleInactiveSelection = (tenantId) => {
+    setSelectedInactiveIds((ids) =>
+      ids.includes(tenantId) ? ids.filter((id) => id !== tenantId) : [...ids, tenantId]
+    );
+  };
+
+  const toggleAllInactiveSelection = () => {
+    setSelectedInactiveIds(allInactiveSelected ? [] : inactiveList.map((tenant) => tenant._id));
+  };
+
+  const openPermanentDeleteConfirm = (items) => {
+    const list = Array.isArray(items) ? items : [items];
+    setDeleteError("");
+    setDeleteConfirmTenants(list.filter(Boolean));
+  };
+
+  const handlePermanentDelete = async () => {
+    const ids = deleteConfirmTenants.map((tenant) => tenant._id);
+    if (ids.length === 0) return;
+    setDeletingPermanent(true);
+    setDeleteError("");
+    try {
+      const r = await fetch(`${API}/tenants/permanent/bulk`, {
+        method: "DELETE",
+        headers: authHeader(),
+        body: JSON.stringify({ tenantIds: ids }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message || "Failed to permanently delete candidates.");
+      setDeleteConfirmTenants([]);
+      setSelectedInactiveIds([]);
+      setToast(d.message || "Candidate deleted permanently.");
+      setRefreshKey((k) => k + 1);
+      if (hasSearched) handleSearch();
+    } catch (e) {
+      setDeleteError(e.message);
+    } finally {
+      setDeletingPermanent(false);
+    }
+  };
+
   const TH = ({ children, className = "" }) => (
     <th className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b border-gray-200 ${className}`}>
       {children}
@@ -1060,6 +1170,17 @@ export default function CandidatesManagement() {
 
     return (
       <tr key={tenant._id} className={`transition-colors group ${rowBg}`}>
+        {isInactive && (
+          <td className="px-4 py-3.5">
+            <input
+              type="checkbox"
+              checked={selectedInactiveIds.includes(tenant._id)}
+              onChange={() => toggleInactiveSelection(tenant._id)}
+              className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+              aria-label={`Select ${tenant.name}`}
+            />
+          </td>
+        )}
         {/* Candidate */}
         <td className="px-4 py-3.5">
           <div className="flex items-center gap-3">
@@ -1127,11 +1248,17 @@ export default function CandidatesManagement() {
         </td>
 
         {/* Actions */}
-        <td className="px-4 py-3.5 text-right">
+        <td className="px-4 py-3.5 text-right space-x-2">
           <button
             onClick={() => setSelectedId(tenant._id)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-500 border border-amber-200 text-amber-700 hover:text-white transition-colors group-hover:shadow-sm"
           >👁 View</button>
+          {isInactive && (
+            <button
+              onClick={() => openPermanentDeleteConfirm(tenant)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-600 border border-rose-200 text-rose-700 hover:text-white transition-colors group-hover:shadow-sm"
+            >Delete</button>
+          )}
         </td>
       </tr>
     );
@@ -1367,11 +1494,39 @@ export default function CandidatesManagement() {
               <div className="flex-1 h-px bg-gray-200" />
             </div>
 
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-100 bg-white px-4 py-3 shadow-sm">
+              <label className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={allInactiveSelected}
+                  onChange={toggleAllInactiveSelection}
+                  className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                />
+                Select all vacated candidates
+              </label>
+              <button
+                onClick={() => openPermanentDeleteConfirm(selectedInactiveTenants)}
+                disabled={selectedInactiveTenants.length === 0}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Delete Selected ({selectedInactiveTenants.length})
+              </button>
+            </div>
+
             {/* Desktop Table */}
             <div className="hidden lg:block rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm opacity-75">
               <table className="w-full">
                 <thead>
                   <tr>
+                    <TH className="w-10">
+                      <input
+                        type="checkbox"
+                        checked={allInactiveSelected}
+                        onChange={toggleAllInactiveSelection}
+                        className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                        aria-label="Select all inactive candidates"
+                      />
+                    </TH>
                     <TH>Candidate</TH>
                     <TH>Phone / Email</TH>
                     <TH>Joining Date</TH>
@@ -1396,6 +1551,10 @@ export default function CandidatesManagement() {
                   rentInfo={null}
                   onViewMore={setSelectedId}
                   onPhotoClick={(url, name) => setTablePhotoPopup({ imageUrl: url, name })}
+                  selectable
+                  selected={selectedInactiveIds.includes(tenant._id)}
+                  onToggleSelect={() => toggleInactiveSelection(tenant._id)}
+                  onDelete={() => openPermanentDeleteConfirm(tenant)}
                 />
               ))}
             </div>
@@ -1422,6 +1581,16 @@ export default function CandidatesManagement() {
       )}
 
       {/* ── TOAST ── */}
+      {deleteConfirmTenants.length > 0 && (
+        <PermanentDeleteConfirmModal
+          tenants={deleteConfirmTenants}
+          onConfirm={handlePermanentDelete}
+          onCancel={() => { setDeleteConfirmTenants([]); setDeleteError(""); }}
+          loading={deletingPermanent}
+          error={deleteError}
+        />
+      )}
+
       {toast && <Toast msg={toast} onDone={() => setToast("")} />}
     </div>
   );

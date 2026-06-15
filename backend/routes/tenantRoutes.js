@@ -9,10 +9,87 @@ import axios from "axios";
 import { fileURLToPath } from "url";
 import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
+import RentPayment from "../models/Rentpayment.js";
+import PaymentRequest from "../models/PaymentRequest.js";
 import jwt from "jsonwebtoken";
 import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
+
+async function clearTenantBedRefs(ownerId, tenantIds) {
+  const tenantIdSet = new Set(tenantIds.map((id) => id.toString()));
+  const buildings = await Building.find({ owner: ownerId });
+
+  await Promise.all(buildings.map(async (building) => {
+    let changed = false;
+    for (const floor of building.floors) {
+      for (const room of floor.rooms) {
+        for (const bed of room.beds) {
+          if (bed.tenantId && tenantIdSet.has(bed.tenantId.toString())) {
+            bed.tenantId = null;
+            bed.status = "Available";
+            changed = true;
+          }
+        }
+      }
+    }
+    if (changed) await building.save();
+  }));
+}
+
+async function permanentlyDeleteInactiveTenants(ownerId, tenantIds) {
+  const uniqueIds = [...new Set(tenantIds.map((id) => id?.toString()).filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    const err = new Error("Select at least one inactive candidate.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const tenants = await Tenant.find({ _id: { $in: uniqueIds }, owner: ownerId });
+  if (tenants.length !== uniqueIds.length) {
+    const err = new Error("One or more candidates were not found.");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const activeTenant = tenants.find((tenant) => tenant.status !== "Inactive");
+  if (activeTenant) {
+    const err = new Error(`Cannot permanently delete active candidate: ${activeTenant.name}. Vacate first.`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const ids = tenants.map((tenant) => tenant._id);
+  const names = tenants.map((tenant) => tenant.name);
+
+  await clearTenantBedRefs(ownerId, ids);
+  const [rentResult, requestResult] = await Promise.all([
+    RentPayment.deleteMany({ owner: ownerId, tenantId: { $in: ids } }),
+    PaymentRequest.deleteMany({ owner: ownerId, tenantId: { $in: ids } }),
+  ]);
+  const tenantResult = await Tenant.deleteMany({ owner: ownerId, _id: { $in: ids }, status: "Inactive" });
+
+  await logActivity(
+    ownerId,
+    "DELETE",
+    "Tenant",
+    `Permanently deleted inactive candidate${names.length > 1 ? "s" : ""}: ${names.join(", ")}`,
+    {
+      tenantIds: ids.map((id) => id.toString()),
+      names,
+      deletedRentPayments: rentResult.deletedCount || 0,
+      deletedPaymentRequests: requestResult.deletedCount || 0,
+      deletedTenants: tenantResult.deletedCount || 0,
+    }
+  );
+
+  return {
+    deletedTenants: tenantResult.deletedCount || 0,
+    deletedRentPayments: rentResult.deletedCount || 0,
+    deletedPaymentRequests: requestResult.deletedCount || 0,
+    names,
+  };
+}
 
 // ── __dirname for ES modules ──────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url);
@@ -44,15 +121,21 @@ async function sendBrevoEmail(toEmail, toName, subject, htmlContent) {
   const senderEmail = (process.env.BREVO_SENDER_EMAIL  || "").trim();
   const senderName  = (process.env.BREVO_SENDER_NAME   || "Nilayam Hostel").trim();
   if (!apiKey || !senderEmail) throw new Error("Brevo credentials missing in .env");
-  const { data } = await axios.post(BREVO_API_URL, {
-    sender: { name: senderName, email: senderEmail },
-    to:     [{ email: toEmail, name: toName }],
-    subject,
-    htmlContent,
-  }, {
-    headers: { "Content-Type": "application/json", "api-key": apiKey },
-  });
-  return data;
+  try {
+    const { data } = await axios.post(BREVO_API_URL, {
+      sender: { name: senderName, email: senderEmail },
+      to:     [{ email: toEmail, name: toName }],
+      subject,
+      htmlContent,
+    }, {
+      headers: { "Content-Type": "application/json", "api-key": apiKey },
+    });
+    return data;
+  } catch (err) {
+    const brevoMessage = err.response?.data?.message || err.message || "Email send failed";
+    console.error("[Brevo] Tenant email failed:", brevoMessage);
+    throw new Error(brevoMessage);
+  }
 }
 
 // ── OTP email template ────────────────────────────────────────────────────────
@@ -488,10 +571,29 @@ router.put("/:id", auth, upload.fields([{ name: "aadharFront" }, { name: "aadhar
       if (newDocs.passportPhoto) updateData["documents.passportPhoto"] = newDocs.passportPhoto;
     }
 
+    const previousRentAmount = Number(existingTenant.rentAmount || 0);
+    const nextRentAmount = Number(updateData.rentAmount || 0);
+    const rentAmountChanged = nextRentAmount > 0 && nextRentAmount !== previousRentAmount;
+
     const updatedTenant = await Tenant.findOneAndUpdate(
       { _id: req.params.id, owner: req.user.id },
       updateData, { new: true, runValidators: true }
     );
+
+    if (rentAmountChanged) {
+      const tenantRecords = await RentPayment.find({
+        owner: req.user.id,
+        tenantId: updatedTenant._id,
+      });
+
+      await Promise.all(tenantRecords.map(async (record) => {
+        record.rentAmount = nextRentAmount;
+        if (record.paidAmount >= nextRentAmount) record.status = "Paid";
+        else if (record.paidAmount > 0) record.status = "Partial";
+        else record.status = "Due";
+        await record.save();
+      }));
+    }
 
     const info = existingTenant.allocationInfo;
     const loc = info?.buildingName ? `(${info.buildingName} ➔ Room ${info.roomNumber})` : "(Unallocated)";
@@ -525,6 +627,37 @@ router.delete("/:id/vacate", auth, async (req, res) => {
     await logActivity(req.user.id, "VACATE", "Tenant", `Vacated Tenant: ${tenant.name} from ${locationString}`);
     res.json({ message: "Tenant vacated." });
   } catch (err) { res.status(500).json({ message: "Server error." }); }
+});
+
+router.delete("/:id/permanent", auth, async (req, res) => {
+  try {
+    const result = await permanentlyDeleteInactiveTenants(req.user.id, [req.params.id]);
+    res.json({
+      message: `${result.names[0] || "Candidate"} permanently deleted.`,
+      ...result,
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({
+      message: err.statusCode ? err.message : "Server error.",
+      error: err.message,
+    });
+  }
+});
+
+router.delete("/permanent/bulk", auth, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.tenantIds) ? req.body.tenantIds : [];
+    const result = await permanentlyDeleteInactiveTenants(req.user.id, ids);
+    res.json({
+      message: `${result.deletedTenants} candidate${result.deletedTenants !== 1 ? "s" : ""} permanently deleted.`,
+      ...result,
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({
+      message: err.statusCode ? err.message : "Server error.",
+      error: err.message,
+    });
+  }
 });
 
 router.put("/:id/reallocate", auth, async (req, res) => {

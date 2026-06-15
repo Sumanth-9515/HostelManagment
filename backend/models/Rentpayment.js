@@ -20,6 +20,9 @@ const RentPaymentSchema = new mongoose.Schema(
     // Rent expected for this month
     rentAmount: { type: Number, required: true },
 
+    // True when this month has a custom rent edited from payment history.
+    rentAmountLocked: { type: Boolean, default: false },
+
     // Running total already paid
     paidAmount: { type: Number, default: 0 },
 
