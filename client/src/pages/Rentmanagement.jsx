@@ -198,7 +198,7 @@ function ProfileAvatar({ name, photoUrl, size = "md", hasPreviousPending = false
 }
 
 // ─── Email Reminder Button ────────────────────────────────────────────────────
-function EmailReminderButton({ tenantId, tenantEmail, hasPreviousPending = false, pendingMonthsCount = 0, className = "" }) {
+function EmailReminderButton({ tenantId, tenantEmail, hasPreviousPending = false, pendingMonthsCount = 0, isAdvanceOnly = false, className = "" }) {
   const [state, setState] = useState("idle");
   const [errMsg, setErrMsg] = useState("");
   const timerRef = useRef(null);
@@ -231,12 +231,14 @@ function EmailReminderButton({ tenantId, tenantEmail, hasPreviousPending = false
   if (state === "error")   return <button onClick={handleSend} title={errMsg} className={`${baseClass} bg-rose-50 border-rose-200 text-rose-700 ${className}`}>Failed</button>;
   if (state === "sending") return <button disabled className={`${baseClass} bg-violet-50 border-violet-200 text-violet-500 opacity-75 ${className}`}>Sending…</button>;
 
-  const btnStyle = hasPreviousPending
+  const btnStyle = isAdvanceOnly
+    ? "bg-emerald-50 hover:bg-emerald-500 border-emerald-200 text-emerald-700 hover:text-white"
+    : hasPreviousPending
     ? "bg-rose-50 hover:bg-rose-500 border-rose-300 text-rose-700 hover:text-white"
     : "bg-violet-50 hover:bg-violet-500 border-violet-200 text-violet-700 hover:text-white";
   return (
     <button onClick={handleSend} className={`${baseClass} ${btnStyle} ${className}`}>
-      {hasPreviousPending ? "⚠️ Warn Email" : "✉️ Email"}
+      {isAdvanceOnly ? "Adv Reminder" : hasPreviousPending ? "⚠️ Warn Email" : "✉️ Email"}
     </button>
   );
 }
@@ -527,6 +529,7 @@ function DueCard({ item, onSelect, onPayNow }) {
   const alloc = tenant.allocationInfo || {};
   const phone = tenant.phone?.replace(/\D/g, "");
   const payable = buildPayable(pendingMonths, record, remaining, pendingAdvanceAmount);
+  const isAdvanceOnly = pendingAdvanceAmount > 0 && remaining <= 0 && !hasPreviousPending;
   const passportPhoto = tenant.documents?.passportPhoto;
   const [showProfilePopup, setShowProfilePopup] = useState(false);
   const [showBillModal, setShowBillModal] = useState(false);
@@ -553,6 +556,8 @@ const handleWA = (e) => {
       <div onClick={() => onSelect(tenant._id)} className="relative group cursor-pointer rounded-2xl border border-gray-200 bg-white hover:border-amber-400 hover:shadow-md transition-all duration-200 overflow-hidden">
         {hasPreviousPending
           ? <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-600 via-rose-400 to-rose-600 animate-pulse" />
+          : isAdvanceOnly
+          ? <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-500" />
           : isOverdue
           ? <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500" />
           : <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500" />}
@@ -615,7 +620,9 @@ const handleWA = (e) => {
               <p className={`text-2xl font-black ${hasPreviousPending ? "text-rose-600" : "text-gray-900"}`}>{fmt(totalAccumulatedDue)}</p>
             </div>
             <div className="text-right">
-              {isOverdue
+              {isAdvanceOnly
+                ? <span className="text-emerald-700 text-xs font-semibold bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">Advance pending</span>
+                : isOverdue
                 ? <span className="text-rose-600 text-xs font-semibold bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">⚠️ {daysOverdue}d overdue</span>
                 : daysUntilDue !== null
                 ? <span className="text-amber-600 text-xs font-semibold bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">🕐 Due in {daysUntilDue === 0 ? "today" : `${daysUntilDue}d`}</span>
@@ -643,7 +650,7 @@ const handleWA = (e) => {
             >
               {hasPreviousPending ? "Pay Dues" : "Pay Now"}
             </button>
-            <EmailReminderButton tenantId={tenant._id} tenantEmail={tenant.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} className="shrink-0 px-3" />
+            <EmailReminderButton tenantId={tenant._id} tenantEmail={tenant.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} isAdvanceOnly={isAdvanceOnly} className="shrink-0 px-3" />
           </div>
         </div>
       </div>
@@ -887,6 +894,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   const phone = tenant?.phone?.replace(/\D/g, "");
   const advanceAmount = Number(tenant?.advanceAmount || 0);
   const payable = buildPayable(pendingMonths, currentRecord, remaining, pendingAdvanceAmount);
+  const isAdvanceOnly = pendingAdvanceAmount > 0 && remaining <= 0 && !hasPreviousPending;
   const passportPhoto = tenant?.documents?.passportPhoto;
   const handleViewDocument = (docUrl) => { if (docUrl) setViewingDoc(docUrl); };
   const inputClass = "w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-gray-900 text-sm focus:outline-none focus:border-amber-400 transition-colors";
@@ -979,7 +987,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   📱 WhatsApp
 </button>
                     <a href={`tel:${tenant?.phone}`} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-600 border border-blue-200 text-blue-700 hover:text-white transition-colors">📞 Call</a>
-                    {(currentRecord?.status !== "Paid" || hasPreviousPending) && <EmailReminderButton tenantId={tenant?._id} tenantEmail={tenant?.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} />}
+                    {(currentRecord?.status !== "Paid" || hasPreviousPending || isAdvanceOnly) && <EmailReminderButton tenantId={tenant?._id} tenantEmail={tenant?.email} hasPreviousPending={hasPreviousPending} pendingMonthsCount={pendingMonthsCount} isAdvanceOnly={isAdvanceOnly} />}
                   </div>
                 </div>
                 <div className="text-right shrink-0 hidden sm:block">

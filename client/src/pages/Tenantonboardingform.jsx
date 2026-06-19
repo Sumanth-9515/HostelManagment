@@ -449,16 +449,16 @@ const set = k => e => {
     <div style={rootStyle}>
       <div style={{ ...centerStyle, maxWidth: 400 }}>
         <div style={{ fontSize: 52, marginBottom: 16 }}>🔗</div>
-        <h2 style={{ color: "#0f172a", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Link Expired or Invalid</h2>
+        <h2 style={{ color: "#0f172a", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Invalid Link</h2>
         <p style={{ color: "#64748b", fontSize: 14, lineHeight: 1.65, textAlign: "center" }}>
-          This onboarding link is no longer valid. It may have expired (links are valid for 7 days)
-          or the URL was incorrectly copied. Please contact your hostel manager for a new link.
+          This onboarding link is not valid. The URL may have been copied incorrectly.
+          Please contact your hostel manager for the correct permanent link.
         </p>
         <div style={{
           marginTop: 20, padding: "12px 16px", background: "#fef3c7", borderRadius: 10,
           border: "1px solid #fcd34d", fontSize: 13, color: "#92400e"
         }}>
-          📞 Contact your manager for a fresh onboarding link.
+          📞 Contact your manager for the correct onboarding link.
         </div>
       </div>
     </div>

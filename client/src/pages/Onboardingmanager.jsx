@@ -351,6 +351,13 @@ export default function OnboardingManager() {
   const [toast,      setToast]      = useState(null);
   const [selectedTenant, setSelectedTenant] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareMode, setShareMode] = useState("whatsapp");
+  const [sharePhone, setSharePhone] = useState("");
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareSending, setShareSending] = useState(false);
+  const [shareStatus, setShareStatus] = useState(null);
+  const [showCounts, setShowCounts] = useState(false);
 
   /* ── Load candidates who registered via onboarding link ── */
   useEffect(() => {
@@ -362,8 +369,8 @@ export default function OnboardingManager() {
       .finally(() => setFetching(false));
   }, []);
 
-  /* ── Generate link ── */
-  const generateLink = async () => {
+  /* ── Load permanent owner link ── */
+  const loadOnboardingLink = async () => {
     setLinkLoading(true);
     try {
       const res  = await fetch(`${API}/tenants/generate-link`, { headers: authHeaders() });
@@ -381,6 +388,10 @@ export default function OnboardingManager() {
       setLinkLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadOnboardingLink();
+  }, []);
 
   /* ── Copy link ── */
   const copyLink = async () => {
@@ -403,6 +414,57 @@ export default function OnboardingManager() {
   const openDocumentModal = (tenant) => {
     setSelectedTenant(tenant);
     setIsModalOpen(true);
+  };
+
+  const shareOnWhatsApp = (e) => {
+    e.preventDefault();
+    const digits = sharePhone.replace(/\D/g, "");
+    if (digits.length < 10) {
+      showToast("Enter a valid WhatsApp number.", "error");
+      return;
+    }
+
+    const whatsappNumber = digits.length === 10 ? `91${digits}` : digits;
+    const message = [
+      "Please open this link and complete your hostel onboarding form:",
+      link,
+      "",
+      "If it does not open, copy the link and paste it in Chrome, then fill the form.",
+    ].join("\n");
+
+    setShareOpen(false);
+    setSharePhone("");
+    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  };
+
+  const sendLinkByEmail = async (e) => {
+    e.preventDefault();
+    const email = shareEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setShareStatus({ type: "error", message: "Enter a valid email." });
+      setTimeout(() => setShareStatus(null), 2000);
+      return;
+    }
+
+    setShareSending(true);
+    setShareStatus(null);
+    try {
+      const res = await fetch(`${API}/tenants/share-link-email`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ email, link }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to send email.");
+
+      setShareStatus({ type: "success", message: "Email sent." });
+      setShareEmail("");
+    } catch (err) {
+      setShareStatus({ type: "error", message: err.message || "Email failed." });
+    } finally {
+      setShareSending(false);
+      setTimeout(() => setShareStatus(null), 2000);
+    }
   };
 
   /* ── Filtering ── */
@@ -442,6 +504,14 @@ export default function OnboardingManager() {
         }
         @keyframes om-spin { 
           to { transform: rotate(360deg); } 
+        }
+        @keyframes om-modal-in {
+          from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+          to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        @keyframes om-backdrop-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
         .om-row:hover { background: #f8fafc !important; }
         .om-copy-btn:hover { background: #4f46e5 !important; }
@@ -487,17 +557,263 @@ export default function OnboardingManager() {
       )}
 
       {/* ── Page heading ── */}
+      {shareOpen && (
+        <>
+          <div
+            onClick={() => setShareOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(15,23,42,0.58)",
+              backdropFilter: "blur(4px)",
+              zIndex: 9997,
+              animation: "om-backdrop-in 0.18s ease-out",
+            }}
+          />
+          <form
+            onSubmit={shareMode === "email" ? sendLinkByEmail : shareOnWhatsApp}
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "min(92vw, 440px)",
+              background: "#fff",
+              borderRadius: 18,
+              boxShadow: "0 24px 70px rgba(15,23,42,0.28)",
+              zIndex: 9998,
+              overflow: "hidden",
+              animation: "om-modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1)",
+            }}
+          >
+            <div style={{
+              padding: "22px 24px",
+              background: "linear-gradient(135deg,#ecfdf5,#eff6ff)",
+              borderBottom: "1px solid #e2e8f0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 14,
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
+                  Share Onboarding Link
+                </h3>
+                <p style={{ margin: "5px 0 0", fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                  Send the onboarding instructions and permanent form link to a candidate.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareOpen(false)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  border: "1px solid #dbe4ee",
+                  background: "#fff",
+                  color: "#64748b",
+                  fontSize: 18,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+                aria-label="Close share popup"
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ padding: 24 }}>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                padding: 4,
+                borderRadius: 12,
+                background: "#f1f5f9",
+                marginBottom: 18,
+              }}>
+                {["whatsapp", "email"].map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => {
+                      setShareMode(mode);
+                      setShareStatus(null);
+                    }}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "none",
+                      background: shareMode === mode ? "#fff" : "transparent",
+                      color: shareMode === mode ? "#0f172a" : "#64748b",
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      boxShadow: shareMode === mode ? "0 2px 8px rgba(15,23,42,0.08)" : "none",
+                    }}
+                  >
+                    {mode === "whatsapp" ? "WhatsApp" : "Email"}
+                  </button>
+                ))}
+              </div>
+
+              <label style={{
+                display: "block",
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#475569",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                marginBottom: 8,
+              }}>
+                {shareMode === "email" ? "Candidate Email Address" : "Candidate WhatsApp Number"}
+              </label>
+              {shareMode === "email" ? (
+                <input
+                  autoFocus
+                  type="email"
+                  value={shareEmail}
+                  onChange={(e) => setShareEmail(e.target.value)}
+                  placeholder="Enter email address"
+                  style={{
+                    width: "100%",
+                    border: "1.5px solid #dbe4ee",
+                    borderRadius: 12,
+                    padding: "13px 14px",
+                    fontSize: 15,
+                    color: "#0f172a",
+                    outline: "none",
+                    fontFamily: "inherit",
+                    background: "#f8fafc",
+                  }}
+                />
+              ) : (
+                <input
+                  autoFocus
+                  type="tel"
+                  value={sharePhone}
+                  onChange={(e) => setSharePhone(e.target.value)}
+                  placeholder="Enter mobile number"
+                  style={{
+                    width: "100%",
+                    border: "1.5px solid #dbe4ee",
+                    borderRadius: 12,
+                    padding: "13px 14px",
+                    fontSize: 15,
+                    color: "#0f172a",
+                    outline: "none",
+                    fontFamily: "inherit",
+                    background: "#f8fafc",
+                  }}
+                />
+              )}
+
+              <div style={{
+                marginTop: 14,
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
+                  Message Preview
+                </div>
+                <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.55 }}>
+                  Please open this link and complete your hostel onboarding form:<br />
+                  <span style={{ color: "#4f46e5", wordBreak: "break-all", fontFamily: "monospace" }}>{link}</span>
+                  <br /><br />
+                  If it does not open, copy the link and paste it in Chrome, then fill the form.
+                </div>
+              </div>
+
+              {shareStatus && (
+                <div style={{
+                  marginTop: 14,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: shareStatus.type === "success" ? "#dcfce7" : "#fee2e2",
+                  color: shareStatus.type === "success" ? "#166534" : "#991b1b",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  textAlign: "center",
+                }}>
+                  {shareStatus.message}
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(false)}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 10,
+                    border: "1.5px solid #e2e8f0",
+                    background: "#fff",
+                    color: "#475569",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={shareSending}
+                  style={{
+                    padding: "10px 18px",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "linear-gradient(135deg,#10b981,#059669)",
+                    color: "#fff",
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: shareSending ? "not-allowed" : "pointer",
+                    opacity: shareSending ? 0.72 : 1,
+                    boxShadow: "0 8px 20px rgba(16,185,129,0.24)",
+                  }}
+                >
+                  {shareMode === "email"
+                    ? (shareSending ? "Sending..." : "Send Email")
+                    : "Share on WhatsApp"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </>
+      )}
+
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: "clamp(20px,4vw,26px)", fontWeight: 800, color: "#0f172a", margin: "0 0 4px" }}>
           🔗 Onboarding Manager
         </h1>
         <p style={{ fontSize: 13.5, color: "#64748b", margin: 0 }}>
-          Generate a shareable form link and track candidates who self-registered.
+          Share your permanent form link and track candidates who self-registered.
         </p>
       </div>
 
       {/* ── Stats row ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 26 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: showCounts ? 14 : 24 }}>
+  <button
+  type="button"
+  onClick={() => setShowCounts(v => !v)}
+  style={{
+    border: "none",
+    background: "transparent",
+    color: "#4f46e5",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+    padding: "2px 4px",
+  }}
+>
+  {showCounts ? "Hide Counts" : "Show Counts"}
+</button>
+      </div>
+
+      <div style={{ display: showCounts ? "grid" : "none", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 26, animation: "om-fade 0.22s ease" }}>
         <StatCard icon="👥" label="Total via Link"  value={stats.total}    color="#6366f1" />
         <StatCard icon="✅" label="Active"          value={stats.active}   color="#10b981" />
         <StatCard icon="🏠" label="Room Allocated"  value={stats.allocated} color="#f59e0b" />
@@ -513,22 +829,22 @@ export default function OnboardingManager() {
               📋 Onboarding Form Link
             </h2>
             <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
-              Share this link with prospective tenants. It's valid for 7 days.
+              Share this link with prospective tenants. One owner has one permanent link.
             </p>
           </div>
           <button
-            className="om-gen-btn"
-            onClick={generateLink}
-            disabled={linkLoading}
+            type="button"
+            onClick={() => setShareOpen(true)}
+            disabled={linkLoading || !link}
+            title="Share onboarding link on WhatsApp"
             style={{
               padding: "10px 20px", borderRadius: 10, border: "none",
-              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              background: "linear-gradient(135deg,#10b981,#059669)",
               color: "#fff", fontSize: 13, fontWeight: 700,
-              cursor: linkLoading ? "not-allowed" : "pointer",
-              boxShadow: "0 4px 14px rgba(99,102,241,0.28)",
+              cursor: linkLoading || !link ? "not-allowed" : "pointer",
+              boxShadow: "0 4px 14px rgba(16,185,129,0.22)",
               display: "flex", alignItems: "center", gap: 8,
-              transition: "transform 0.15s, opacity 0.15s",
-              opacity: linkLoading ? 0.7 : 1,
+              opacity: linkLoading || !link ? 0.7 : 1,
               flexShrink: 0,
             }}
           >
@@ -537,9 +853,9 @@ export default function OnboardingManager() {
                 <span style={{ width:14,height:14,border:"2px solid rgba(255,255,255,0.4)",
                   borderTop:"2px solid #fff",borderRadius:"50%",animation:"om-spin 0.6s linear infinite",display:"inline-block"
                 }} />
-                Generating…
+                Loading...
               </>
-            ) : (link ? "🔄 Regenerate" : "⚡ Generate Link")}
+            ) : "Share"}
           </button>
         </div>
 
@@ -600,7 +916,7 @@ export default function OnboardingManager() {
 
             {/* Info row */}
             <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
-              <div style={{ ...pill("#92400e","#fef3c7") }}>⏳ Expires in 7 days</div>
+              <div style={{ ...pill("#065f46","#d1fae5") }}>No expiry</div>
               <div style={{ ...pill("#065f46","#d1fae5") }}>🔓 Public — no login needed</div>
               <div style={{ ...pill("#1e40af","#dbeafe") }}>🌐 Can be shared via WhatsApp / Email</div>
             </div>
@@ -625,7 +941,9 @@ export default function OnboardingManager() {
             textAlign: "center", color: "#94a3b8",
           }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>🔗</div>
-            <p style={{ margin: 0, fontSize: 14 }}>Click "Generate Link" to create a shareable onboarding form URL.</p>
+            <p style={{ margin: 0, fontSize: 14 }}>
+              {linkLoading ? "Loading your permanent onboarding form URL..." : "Could not load the onboarding form URL."}
+            </p>
           </div>
         )}
       </div>

@@ -15,6 +15,47 @@ import jwt from "jsonwebtoken";
 import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
+const ONBOARDING_LINK_PURPOSE = "tenant-registration";
+
+function getStableOnboardingToken(ownerId) {
+  const ownerKey = ownerId.toString();
+  const signature = crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(`${ONBOARDING_LINK_PURPOSE}:${ownerKey}`)
+    .digest("base64url")
+    .slice(0, 24);
+
+  return `${ownerKey}.${signature}`;
+}
+
+function decodeStableOnboardingToken(token) {
+  const [ownerId, signature] = String(token || "").split(".");
+  if (!/^[a-f\d]{24}$/i.test(ownerId) || !signature) return null;
+
+  const expected = getStableOnboardingToken(ownerId).split(".")[1];
+  const sigBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (sigBuffer.length !== expectedBuffer.length) return null;
+
+  return crypto.timingSafeEqual(sigBuffer, expectedBuffer) ? ownerId : null;
+}
+
+function decodeOnboardingLinkToken(token) {
+  const stableOwnerId = decodeStableOnboardingToken(token);
+  if (stableOwnerId) return { id: stableOwnerId, purpose: ONBOARDING_LINK_PURPOSE };
+
+  if (token && token.length <= 12) {
+    const entry = shortTokenStore.get(token);
+    if (!entry || entry.expiresAt < Date.now()) {
+      const err = new Error("Link is invalid.");
+      err.statusCode = 401;
+      throw err;
+    }
+    return jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
+  }
+
+  return jwt.verify(token, process.env.JWT_SECRET);
+}
 
 async function clearTenantBedRefs(ownerId, tenantIds) {
   const tenantIdSet = new Set(tenantIds.map((id) => id.toString()));
@@ -137,6 +178,77 @@ async function sendBrevoEmail(toEmail, toName, subject, htmlContent) {
     throw new Error(brevoMessage);
   }
 }
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const onboardingShareEmailHtml = ({ link, ownerName }) => `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Tahoma,sans-serif;">
+  <table width="100%" cellspacing="0" cellpadding="0" style="padding:40px 15px;">
+    <tr><td align="center">
+      <table width="560" cellspacing="0" cellpadding="0"
+             style="background:#ffffff;border-radius:18px;overflow:hidden;
+                    box-shadow:0 10px 28px rgba(15,23,42,0.10);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#0f766e,#2563eb);
+                     padding:34px 32px;text-align:center;">
+            <div style="font-size:38px;margin-bottom:10px;">🏨</div>
+            <h1 style="margin:0;font-size:23px;color:#ffffff;font-weight:800;">
+              Tenant Onboarding Form
+            </h1>
+            <p style="margin:8px 0 0;color:#dbeafe;font-size:13px;">
+              Nilayam Hostel Management
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:34px 32px;">
+            <p style="margin:0 0 16px;font-size:15px;color:#334155;line-height:1.7;">
+              ${escapeHtml(ownerName)} has shared the hostel onboarding form with you.
+            </p>
+            <p style="margin:0 0 24px;font-size:15px;color:#334155;line-height:1.7;">
+              Please open this link and complete your hostel onboarding form.
+            </p>
+            <div style="text-align:center;margin:28px 0;">
+              <a href="${escapeHtml(link)}" target="_blank"
+                 style="display:inline-block;background:#10b981;color:#ffffff;
+                        text-decoration:none;border-radius:12px;padding:14px 24px;
+                        font-size:15px;font-weight:800;">
+                Open Onboarding Form
+              </a>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin:22px 0;">
+              <div style="font-size:12px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:8px;">
+                Form Link
+              </div>
+              <a href="${escapeHtml(link)}" target="_blank"
+                 style="font-size:13px;color:#4f46e5;word-break:break-all;text-decoration:none;">
+                ${escapeHtml(link)}
+              </a>
+            </div>
+            <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;text-align:center;">
+              If the button does not open, copy the link above and paste it in Chrome, then fill the form.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;padding:16px 32px;text-align:center;
+                     font-size:12px;color:#94a3b8;">
+            &copy; ${new Date().getFullYear()} Nilayam Hostel Management
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
 // ── OTP email template ────────────────────────────────────────────────────────
 const otpEmailHtml = (otpCode) => `
@@ -346,37 +458,46 @@ const auth = (req, res, next) => {
 
 // Generate Onboarding Link
 router.get("/generate-link", auth, (req, res) => {
-  const jwtToken = jwt.sign(
-    { id: req.user.id, purpose: "tenant-registration" },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
-  const shortCode = crypto.randomBytes(5).toString("base64url").slice(0, 8);
-  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-  shortTokenStore.set(shortCode, { jwtToken, expiresAt });
+  const token = getStableOnboardingToken(req.user.id);
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  const link = `${frontendUrl}/tenant-register/${shortCode}`;
-  res.json({ link, expiresIn: "7 days" });
+  const link = `${frontendUrl}/tenant-register/${token}`;
+  res.json({ link, expiresIn: "never" });
+});
+
+router.post("/share-link-email", auth, async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const link = String(req.body.link || "").trim();
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, message: "Valid email is required." });
+    }
+    if (!/^https?:\/\/\S+$/i.test(link)) {
+      return res.status(400).json({ success: false, message: "Valid onboarding link is required." });
+    }
+
+    const ownerName = req.user.name || req.user.owner || "Your hostel manager";
+    await sendBrevoEmail(
+      email,
+      "Candidate",
+      "Complete Your Hostel Onboarding Form",
+      onboardingShareEmailHtml({ link, ownerName })
+    );
+
+    res.json({ success: true, message: "Onboarding link sent." });
+  } catch (err) {
+    console.error("Onboarding share email failed:", err.message);
+    res.status(500).json({ success: false, message: "Failed to send onboarding email." });
+  }
 });
 
 // Validate Link (Restored JWT Purpose Check)
 router.get("/validate-link/:token", async (req, res) => {
   try {
-    let decoded;
-    const raw = req.params.token;
-
-    if (raw.length <= 12) {
-      const entry = shortTokenStore.get(raw);
-      if (!entry || entry.expiresAt < Date.now()) {
-        return res.status(401).json({ message: "Link is invalid or has expired." });
-      }
-      decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
-    } else {
-      decoded = jwt.verify(raw, process.env.JWT_SECRET);
-    }
+    const decoded = decodeOnboardingLinkToken(req.params.token);
 
     // ✅ RESTORED: JWT Purpose Check
-    if (decoded.purpose && decoded.purpose !== "tenant-registration") {
+    if (decoded.purpose && decoded.purpose !== ONBOARDING_LINK_PURPOSE) {
       return res.status(403).json({ message: "Invalid link purpose." });
     }
 
@@ -396,7 +517,7 @@ router.get("/validate-link/:token", async (req, res) => {
 
     res.json({ valid: true, buildings: sanitised });
   } catch (err) {
-    res.status(401).json({ message: "Link is invalid or has expired." });
+    res.status(err.statusCode || 401).json({ message: err.message || "Link is invalid." });
   }
 });
 
@@ -410,13 +531,12 @@ router.post("/register-via-link", upload.fields([{ name: "aadharFront", maxCount
 
       let decoded;
       try {
-        if (linkToken && linkToken.length <= 12) {
-          const entry = shortTokenStore.get(linkToken);
-          decoded = jwt.verify(entry.jwtToken, process.env.JWT_SECRET);
-        } else {
-          decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
-        }
+        decoded = decodeOnboardingLinkToken(linkToken);
       } catch { return res.status(401).json({ message: "Invalid link." }); }
+
+      if (decoded.purpose && decoded.purpose !== ONBOARDING_LINK_PURPOSE) {
+        return res.status(403).json({ message: "Invalid link purpose." });
+      }
 
       const ownerId = decoded.id;
 

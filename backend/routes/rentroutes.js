@@ -365,10 +365,12 @@ function buildRoomAllocationSection(buildingDetails) {
     </div>`;
 }
 
-function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOverdue, daysUntilDue, pendingMonths = [], arrearsTotal = 0, totalAccumulatedDue = 0 }) {
+function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOverdue, daysUntilDue, pendingMonths = [], arrearsTotal = 0, totalAccumulatedDue = 0, pendingAdvanceAmount = 0 }) {
   const remaining = record.rentAmount - record.paidAmount;
   const month = new Date(record.dueDate).toLocaleString("en-IN", { month: "long", year: "numeric" });
   const hasPreviousPending = pendingMonths.length > 0;
+  const hasAdvancePending = pendingAdvanceAmount > 0;
+  const rentOutstanding = arrearsTotal + remaining;
   const accentColor = (isOverdue || hasPreviousPending) ? "#e53e3e" : "#d97706";
 
   let statusText, badgeLabel, statusPill;
@@ -422,10 +424,10 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
     <p class="greeting">Hello, ${tenant.name}! 👋</p>
     <p class="sub-text">${statusText}</p>
     <div class="amount-box">
-      <div class="amount-label">${hasPreviousPending ? "Total Outstanding (All Months)" : "Amount Due This Month"}</div>
-      <div class="amount-value">${fmtINR(hasPreviousPending ? totalAccumulatedDue : remaining)}</div>
+      <div class="amount-label">${hasPreviousPending || hasAdvancePending ? "Total Outstanding" : "Amount Due This Month"}</div>
+      <div class="amount-value">${fmtINR(hasPreviousPending || hasAdvancePending ? totalAccumulatedDue : remaining)}</div>
       <div>${statusPill}</div>
-      ${hasPreviousPending ? `<div class="amount-note">Includes ${fmtINR(remaining)} for current month + ${fmtINR(arrearsTotal)} arrears</div>` : ""}
+      ${hasPreviousPending || hasAdvancePending ? `<div class="amount-note">Rent ${fmtINR(rentOutstanding)}${hasAdvancePending ? ` + Advance ${fmtINR(pendingAdvanceAmount)}` : ""} = Total ${fmtINR(totalAccumulatedDue)}</div>` : ""}
     </div>
     <div class="section-title">📅 Current Billing Cycle</div>
     <div class="info-card">
@@ -438,6 +440,8 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
       <div class="info-row"><span class="info-label">Monthly Rent</span><span class="info-value">${fmtINR(record.rentAmount)}</span></div>
       <div class="info-row"><span class="info-label">Paid So Far</span><span class="info-value" style="color:#276749;">${fmtINR(record.paidAmount)}</span></div>
       <div class="info-row"><span class="info-label">Remaining This Month</span><span class="info-value accent">${fmtINR(remaining)}</span></div>
+      ${hasAdvancePending ? `<div class="info-row"><span class="info-label">Advance Pending</span><span class="info-value accent">${fmtINR(pendingAdvanceAmount)}</span></div>` : ""}
+      ${hasAdvancePending ? `<div class="info-row"><span class="info-label">Total Payable</span><span class="info-value accent">${fmtINR(totalAccumulatedDue)}</span></div>` : ""}
     </div>
     ${arrearsHtml}
     ${buildTenantDetailsSection(tenant, accentColor)}
@@ -457,6 +461,44 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
   const title = hasPreviousPending ? "Urgent: Rent Arrears Notice" : isOverdue ? "Rent Payment Overdue" : "Rent Payment Reminder";
 
   return { subject, html: emailWrapper({ accentColor, icon, title, badgeLabel, bodyHtml }) };
+}
+
+function buildAdvanceReminderEmail({ tenant, pendingAdvanceAmount = 0, buildingDetails }) {
+  const accentColor = "#d97706";
+  const advanceAmount = Number(tenant.advanceAmount || 0);
+  const paidAdvanceAmount = Number(tenant.paidAdvanceAmount || 0);
+  const bodyHtml = `
+    <p class="greeting">Hello, ${tenant.name}!</p>
+    <p class="sub-text">
+      We kindly inform you that your advance payment is pending. Please clear the pending advance amount at your earliest convenience.
+    </p>
+    <div class="amount-box">
+      <div class="amount-label">Advance Payment Pending</div>
+      <div class="amount-value">${fmtINR(pendingAdvanceAmount)}</div>
+      <div><span class="status-pill">Advance Reminder</span></div>
+    </div>
+    <div class="section-title">Payment Summary</div>
+    <div class="info-card">
+      <div class="info-card-header"><span class="info-card-header-icon">₹</span><span class="info-card-header-label">Advance Details</span></div>
+      <div class="info-row"><span class="info-label">Total Advance Expected</span><span class="info-value">${fmtINR(advanceAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Advance Paid So Far</span><span class="info-value" style="color:#276749;">${fmtINR(paidAdvanceAmount)}</span></div>
+      <div class="info-row"><span class="info-label">Advance Pending</span><span class="info-value accent">${fmtINR(pendingAdvanceAmount)}</span></div>
+    </div>
+    ${buildTenantDetailsSection(tenant, accentColor)}
+    ${buildRoomAllocationSection(buildingDetails)}
+    <hr class="divider" />
+    <div class="note-box"><strong>Note:</strong> If you have already made this advance payment, please disregard this reminder.</div>`;
+
+  return {
+    subject: `Advance Payment Pending - ${fmtINR(pendingAdvanceAmount)}`,
+    html: emailWrapper({
+      accentColor,
+      icon: "₹",
+      title: "Advance Payment Reminder",
+      badgeLabel: "Advance Pending",
+      bodyHtml,
+    })
+  };
 }
 
 function buildFullPaymentEmail({ tenant, record, paymentAmount, buildingDetails }) {
@@ -617,13 +659,14 @@ router.get("/due", auth, async (req, res) => {
     let carryForwardTenantsCount = 0;
 
     filtered.forEach(item => {
+      const isAdvanceOnly = item.pendingAdvanceAmount > 0 && item.remaining <= 0 && !item.hasPreviousPending;
       totalPendingAmount += item.totalAccumulatedDue;
       if (item.hasPreviousPending) {
         carryForwardTenantsCount++;
       }
-      if (item.hasPreviousPending || item.isOverdue) {
+      if (!isAdvanceOnly && (item.hasPreviousPending || item.isOverdue)) {
         totalOverdueOrCarryForward++;
-      } else if (item.daysUntilDue !== null && item.daysUntilDue <= 2) {
+      } else if (!isAdvanceOnly && item.daysUntilDue !== null && item.daysUntilDue <= 2) {
         totalDueSoon++;
       }
     });
@@ -1077,13 +1120,21 @@ router.post("/send-reminder", auth, async (req, res) => {
     // 1. Fetch building details
     const buildingDetails = await getBuildingDetailsForTenant(tenant);
 
-    // 2. Generate the email content using the reminder template
-    const { subject, html } = buildReminderEmail({ 
-      tenant, 
-      record: summary.currentRecord, 
-      buildingDetails, 
-      ...summary 
-    });
+    const isAdvanceOnly = summary.pendingAdvanceAmount > 0 && summary.remaining <= 0 && !summary.hasPreviousPending;
+
+    // 2. Generate the email content using the appropriate reminder template
+    const { subject, html } = isAdvanceOnly
+      ? buildAdvanceReminderEmail({
+          tenant,
+          pendingAdvanceAmount: summary.pendingAdvanceAmount,
+          buildingDetails,
+        })
+      : buildReminderEmail({ 
+          tenant, 
+          record: summary.currentRecord, 
+          buildingDetails, 
+          ...summary 
+        });
 
     // 3. Send the email
     await sendBrevoEmail(tenant.email, tenant.name, subject, html);

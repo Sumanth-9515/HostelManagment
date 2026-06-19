@@ -108,11 +108,15 @@ async function syncExpectedRent(record, expectedRent) {
 async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
   const now = new Date();
   const allCycles = getAllCyclesSinceJoining(tenant.joiningDate, now, lookaheadMs);
+  const advanceAmount = Number(tenant.advanceAmount || 0);
+  const paidAdvanceAmount = Number(tenant.paidAdvanceAmount || 0);
+  const pendingAdvanceAmount = Math.max(advanceAmount - paidAdvanceAmount, 0);
 
   if (allCycles.length === 0) {
     return {
       currentRecord: null, remaining: 0, pendingMonths: [], arrearsTotal: 0,
-      totalAccumulatedDue: 0, hasPreviousPending: false, pendingMonthsCount: 0,
+      advanceAmount, paidAdvanceAmount, pendingAdvanceAmount,
+      totalAccumulatedDue: pendingAdvanceAmount, hasPreviousPending: false, pendingMonthsCount: 0,
       isOverdue: false, daysOverdue: null, daysUntilDue: null, dueDate: null,
     };
   }
@@ -163,7 +167,10 @@ async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
     remaining: currentRemaining,
     pendingMonths,
     arrearsTotal,
-    totalAccumulatedDue: arrearsTotal + currentRemaining,
+    advanceAmount,
+    paidAdvanceAmount,
+    pendingAdvanceAmount,
+    totalAccumulatedDue: arrearsTotal + currentRemaining + pendingAdvanceAmount,
     hasPreviousPending: pendingMonths.length > 0,
     pendingMonthsCount: pendingMonths.length,
     isOverdue,
@@ -313,10 +320,12 @@ function buildRoomAllocationSection(buildingDetails) {
     </div>`;
 }
 
-function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOverdue, daysUntilDue, pendingMonths = [], arrearsTotal = 0, totalAccumulatedDue = 0 }) {
+function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOverdue, daysUntilDue, pendingMonths = [], arrearsTotal = 0, totalAccumulatedDue = 0, pendingAdvanceAmount = 0 }) {
   const remaining = record.rentAmount - record.paidAmount;
   const month = new Date(record.dueDate).toLocaleString("en-IN", { month: "short", year: "numeric" });
   const hasPreviousPending = pendingMonths.length > 0;
+  const hasAdvancePending = pendingAdvanceAmount > 0;
+  const rentOutstanding = arrearsTotal + remaining;
   const accentColor = (isOverdue || hasPreviousPending) ? "#e53e3e" : "#d97706";
 
   let statusText, badgeLabel, statusPill;
@@ -371,9 +380,10 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
     <p class="greeting">Hello, ${tenant.name}! 👋</p>
     <p class="sub-text">${statusText}</p>
     <div class="amount-box">
-      <div class="amount-label">${hasPreviousPending ? "Total Outstanding" : "Amount Due"}</div>
-      <div class="amount-value">${fmtINR(hasPreviousPending ? totalAccumulatedDue : remaining)}</div>
+      <div class="amount-label">${hasPreviousPending || hasAdvancePending ? "Total Outstanding" : "Amount Due"}</div>
+      <div class="amount-value">${fmtINR(hasPreviousPending || hasAdvancePending ? totalAccumulatedDue : remaining)}</div>
       <div>${statusPill}</div>
+      ${hasPreviousPending || hasAdvancePending ? `<div style="color:#718096;font-size:12px;margin-top:8px;">Rent ${fmtINR(rentOutstanding)}${hasAdvancePending ? ` + Advance ${fmtINR(pendingAdvanceAmount)}` : ""} = Total ${fmtINR(totalAccumulatedDue)}</div>` : ""}
     </div>
     
     <div class="section-title">📅 Current Billing Cycle</div>
@@ -395,6 +405,15 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
           <td style="padding:10px 16px; color:#718096; font-size:12px;">Remaining This Mth</td>
           <td style="padding:10px 16px; font-size:12px; font-weight:700; text-align:right; color:${accentColor};">${fmtINR(remaining)}</td>
         </tr>
+        ${hasAdvancePending ? `
+        <tr>
+          <td style="padding:10px 16px; border-top:1px solid #edf2f7; color:#718096; font-size:12px;">Advance Pending</td>
+          <td style="padding:10px 16px; border-top:1px solid #edf2f7; font-size:12px; font-weight:700; text-align:right; color:${accentColor};">${fmtINR(pendingAdvanceAmount)}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px; border-top:1px solid #edf2f7; color:#718096; font-size:12px;">Total Payable</td>
+          <td style="padding:10px 16px; border-top:1px solid #edf2f7; font-size:12px; font-weight:800; text-align:right; color:${accentColor};">${fmtINR(totalAccumulatedDue)}</td>
+        </tr>` : ""}
       </table>
     </div>
     
@@ -411,6 +430,55 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
   return { subject, html: emailWrapper({ accentColor, icon, title, badgeLabel, bodyHtml }) };
 }
 
+function buildAdvanceReminderEmail({ tenant, pendingAdvanceAmount = 0, buildingDetails }) {
+  const accentColor = "#d97706";
+  const advanceAmount = Number(tenant.advanceAmount || 0);
+  const paidAdvanceAmount = Number(tenant.paidAdvanceAmount || 0);
+  const bodyHtml = `
+    <p class="greeting">Hello, ${tenant.name}! 👋</p>
+    <p class="sub-text">We kindly inform you that your advance payment is pending. Please clear the pending advance amount at your earliest convenience.</p>
+    <div class="amount-box">
+      <div class="amount-label">Advance Payment Pending</div>
+      <div class="amount-value">${fmtINR(pendingAdvanceAmount)}</div>
+      <div><span class="status-pill">Advance Reminder</span></div>
+    </div>
+    <div class="section-title">Payment Summary</div>
+    <div class="info-card">
+      <div class="info-card-header">
+        <span style="font-size:14px; vertical-align: middle;">₹</span>
+        <span style="font-size:11px;font-weight:700;color:${accentColor};text-transform:uppercase;margin-left:6px;vertical-align: middle;">Advance Details</span>
+      </div>
+      <table width="100%" style="border-collapse: collapse;">
+        <tr>
+          <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#718096; font-size:12px; width:45%;">Total Advance Expected</td>
+          <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#1a202c; font-size:12px; font-weight:600; text-align:right; width:55%;">${fmtINR(advanceAmount)}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#718096; font-size:12px;">Advance Paid So Far</td>
+          <td style="padding:10px 16px; border-bottom:1px solid #edf2f7; color:#276749; font-size:12px; font-weight:700; text-align:right;">${fmtINR(paidAdvanceAmount)}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px; color:#718096; font-size:12px;">Advance Pending</td>
+          <td style="padding:10px 16px; font-size:12px; font-weight:800; text-align:right; color:${accentColor};">${fmtINR(pendingAdvanceAmount)}</td>
+        </tr>
+      </table>
+    </div>
+    ${buildTenantDetailsSection(tenant, accentColor)}
+    ${buildRoomAllocationSection(buildingDetails)}
+    <div class="note-box"><strong>Note:</strong> If you have already made this advance payment, please disregard this reminder.</div>`;
+
+  return {
+    subject: `Advance Payment Pending - ${fmtINR(pendingAdvanceAmount)}`,
+    html: emailWrapper({
+      accentColor,
+      icon: "₹",
+      title: "Advance Payment Reminder",
+      badgeLabel: "Advance Pending",
+      bodyHtml,
+    })
+  };
+}
+
 // ── Execute Specific Target Type ──
 async function runEmailJobForOwner(ownerId, targetType, force = false) {
   const config = await AutoMailConfig.findOne({ owner: ownerId });
@@ -421,6 +489,7 @@ async function runEmailJobForOwner(ownerId, targetType, force = false) {
   if (targetType === "arrears" && !config.sendArrears) return;
   if (targetType === "overdue" && !config.sendOverdue) return;
   if (targetType === "upcoming" && !config.sendUpcoming) return;
+  if (targetType === "advance" && !config.sendAdvance) return;
 
   const tenants = await Tenant.find({ owner: ownerId, status: "Active" }).lean();
   console.log(`[AutoMail] Running job for owner ${ownerId} | Type: ${targetType.toUpperCase()}`);
@@ -434,15 +503,19 @@ async function runEmailJobForOwner(ownerId, targetType, force = false) {
       const summary = await buildTenantSummary(tenant, ownerId, FIVE_DAYS_MS);
       if (!summary || summary.totalAccumulatedDue <= 0) continue;
 
-      const isDueToday = isSameDay(new Date(summary.currentRecord.dueDate), new Date());
+      const isDueToday = summary.currentRecord?.dueDate && isSameDay(new Date(summary.currentRecord.dueDate), new Date());
       if (isDueToday) {
         summary.isOverdue = false;
         summary.daysOverdue = null;
         summary.daysUntilDue = 0;
       }
 
+      const isAdvanceOnly = summary.pendingAdvanceAmount > 0 && summary.remaining <= 0 && !summary.hasPreviousPending;
+
       let dueType = null;
-      if (summary.hasPreviousPending) {
+      if (isAdvanceOnly) {
+        dueType = "advance";
+      } else if (summary.hasPreviousPending) {
         dueType = "arrears";
       } else if (summary.isOverdue) {
         dueType = "overdue";
@@ -453,7 +526,9 @@ async function runEmailJobForOwner(ownerId, targetType, force = false) {
       if (dueType !== targetType) continue;
 
       const buildingDetails = await getBuildingDetailsForTenant(tenant);
-      const { subject, html } = buildReminderEmail({ tenant, record: summary.currentRecord, buildingDetails, ...summary });
+      const { subject, html } = isAdvanceOnly
+        ? buildAdvanceReminderEmail({ tenant, pendingAdvanceAmount: summary.pendingAdvanceAmount, buildingDetails })
+        : buildReminderEmail({ tenant, record: summary.currentRecord, buildingDetails, ...summary });
 
       await sendBrevoEmail(tenant.email, tenant.name, subject, html);
 
@@ -477,6 +552,7 @@ async function runEmailJobForOwner(ownerId, targetType, force = false) {
   if (targetType === "arrears") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunArrears: new Date() });
   if (targetType === "overdue") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunOverdue: new Date() });
   if (targetType === "upcoming") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunUpcoming: new Date() });
+  if (targetType === "advance") await AutoMailConfig.findByIdAndUpdate(config._id, { lastRunAdvance: new Date() });
 
   console.log(`[AutoMail] ${targetType.toUpperCase()} Job done — ${emailsSent} sent.`);
 }
@@ -517,6 +593,7 @@ export async function initAllCronJobs() {
       if (config.sendArrears && config.timeArrears) scheduleJobForOwner(oid, "arrears", config.timeArrears);
       if (config.sendOverdue && config.timeOverdue) scheduleJobForOwner(oid, "overdue", config.timeOverdue);
       if (config.sendUpcoming && config.timeUpcoming) scheduleJobForOwner(oid, "upcoming", config.timeUpcoming);
+      if (config.sendAdvance && config.timeAdvance) scheduleJobForOwner(oid, "advance", config.timeAdvance);
     }
   } catch (err) {
     console.error("[AutoMail] Init failed:", err.message);
@@ -536,7 +613,7 @@ router.get("/config", auth, async (req, res) => {
 
 router.post("/config", auth, async (req, res) => {
   try {
-    const { sendArrears, sendOverdue, sendUpcoming, timeArrears, timeOverdue, timeUpcoming, isEnabled } = req.body;
+    const { sendArrears, sendOverdue, sendUpcoming, sendAdvance, timeArrears, timeOverdue, timeUpcoming, timeAdvance, isEnabled } = req.body;
 
     if (isEnabled) {
       const activeTimes = [];
@@ -551,6 +628,10 @@ router.post("/config", auth, async (req, res) => {
       if (sendUpcoming) {
         if (!timeUpcoming) return res.status(400).json({ message: "Time allocation is mandatory for Upcoming." });
         activeTimes.push({ label: "Upcoming", time: timeUpcoming });
+      }
+      if (sendAdvance) {
+        if (!timeAdvance) return res.status(400).json({ message: "Time allocation is mandatory for Advance." });
+        activeTimes.push({ label: "Advance", time: timeAdvance });
       }
 
       for (let i = 0; i < activeTimes.length; i++) {
@@ -572,12 +653,12 @@ router.post("/config", auth, async (req, res) => {
     const config = await AutoMailConfig.findOneAndUpdate(
       { owner: req.user.id },
       {
-        $set: { sendArrears, sendOverdue, sendUpcoming, timeArrears, timeOverdue, timeUpcoming, isEnabled },
+        $set: { sendArrears, sendOverdue, sendUpcoming, sendAdvance, timeArrears, timeOverdue, timeUpcoming, timeAdvance, isEnabled },
       },
       { returnDocument: 'after', upsert: true, runValidators: true }
     );
 
-    ["arrears", "overdue", "upcoming"].forEach(type => {
+    ["arrears", "overdue", "upcoming", "advance"].forEach(type => {
       const jobKey = `${req.user.id}_${type}`;
       if (cronJobs.has(jobKey)) {
         cronJobs.get(jobKey).stop();
@@ -589,6 +670,7 @@ router.post("/config", auth, async (req, res) => {
       if (config.sendArrears) scheduleJobForOwner(req.user.id, "arrears", config.timeArrears);
       if (config.sendOverdue) scheduleJobForOwner(req.user.id, "overdue", config.timeOverdue);
       if (config.sendUpcoming) scheduleJobForOwner(req.user.id, "upcoming", config.timeUpcoming);
+      if (config.sendAdvance) scheduleJobForOwner(req.user.id, "advance", config.timeAdvance);
     }
 
     res.json({ message: "Configuration saved successfully.", config });
@@ -606,6 +688,7 @@ router.post("/run-now", auth, async (req, res) => {
     if (config.sendArrears) runPromises.push(runEmailJobForOwner(req.user.id, "arrears", true));
     if (config.sendOverdue) runPromises.push(runEmailJobForOwner(req.user.id, "overdue", true));
     if (config.sendUpcoming) runPromises.push(runEmailJobForOwner(req.user.id, "upcoming", true));
+    if (config.sendAdvance) runPromises.push(runEmailJobForOwner(req.user.id, "advance", true));
 
     Promise.all(runPromises).catch(err => console.error("[AutoMail] manual run error:", err.message));
 
