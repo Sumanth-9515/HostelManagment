@@ -377,11 +377,11 @@ export default function OnboardingManager() {
       const data = await res.json();
       
       if (res.ok) {
-        const token = data.link.split('/').pop();
+        const token = data.token || data.link.split('/').pop();
         const dynamicLink = `${window.location.origin}/tenant-register/${token}`;
         setLink(dynamicLink);
       }
-      else showToast(data.message || "Failed to generate link", "error");
+      else showToast(data.message || "Failed to load link", "error");
     } catch {
       showToast("Connection error. Please try again.", "error");
     } finally {

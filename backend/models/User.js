@@ -12,6 +12,10 @@ const userSchema = new mongoose.Schema(
     role:        { type: String, enum: ["user", "master"], default: "user" },
     loginStatus: { type: String, enum: ["active", "blocked", "pending"], default: "active" },
 
+    // One fixed public onboarding code per owner. Generated once on first link
+    // request and reused forever for /tenant-register/:code.
+    onboardingCode: { type: String, default: null, unique: true, sparse: true },
+
     // Plan reference
     plan:     { type: mongoose.Schema.Types.ObjectId, ref: "Plan", default: null },
     planName: { type: String, default: null },

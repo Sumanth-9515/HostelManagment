@@ -11,11 +11,50 @@ import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
 import RentPayment from "../models/Rentpayment.js";
 import PaymentRequest from "../models/PaymentRequest.js";
+import User from "../models/User.js";
 import jwt from "jsonwebtoken";
 import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
 const ONBOARDING_LINK_PURPOSE = "tenant-registration";
+const ONBOARDING_CODE_LENGTH = 8;
+
+const generateOnboardingCode = () => {
+  let code = "";
+  while (code.length < ONBOARDING_CODE_LENGTH) {
+    code += crypto.randomBytes(8).toString("base64url").replace(/[^A-Za-z0-9]/g, "");
+  }
+  return code.slice(0, ONBOARDING_CODE_LENGTH);
+};
+
+async function getPermanentOnboardingCode(ownerId) {
+  const user = await User.findById(ownerId).select("onboardingCode");
+  if (!user) {
+    const err = new Error("Owner not found.");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (user.onboardingCode) return user.onboardingCode;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = generateOnboardingCode();
+    const existing = await User.exists({ onboardingCode: code });
+    if (existing) continue;
+
+    user.onboardingCode = code;
+    try {
+      await user.save();
+      return code;
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+    }
+  }
+
+  const err = new Error("Could not create onboarding code. Please try again.");
+  err.statusCode = 500;
+  throw err;
+}
 
 function getStableOnboardingToken(ownerId) {
   const ownerKey = ownerId.toString();
@@ -40,7 +79,17 @@ function decodeStableOnboardingToken(token) {
   return crypto.timingSafeEqual(sigBuffer, expectedBuffer) ? ownerId : null;
 }
 
-function decodeOnboardingLinkToken(token) {
+async function decodeOnboardingLinkToken(token) {
+  if (token && /^[A-Za-z0-9_-]{8,10}$/.test(token)) {
+    const user = await User.findOne({ onboardingCode: token }).select("_id").lean();
+    if (!user) {
+      const err = new Error("Link is invalid.");
+      err.statusCode = 401;
+      throw err;
+    }
+    return { id: user._id.toString(), purpose: ONBOARDING_LINK_PURPOSE };
+  }
+
   const stableOwnerId = decodeStableOnboardingToken(token);
   if (stableOwnerId) return { id: stableOwnerId, purpose: ONBOARDING_LINK_PURPOSE };
 
@@ -457,11 +506,15 @@ const auth = (req, res, next) => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // Generate Onboarding Link
-router.get("/generate-link", auth, (req, res) => {
-  const token = getStableOnboardingToken(req.user.id);
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  const link = `${frontendUrl}/tenant-register/${token}`;
-  res.json({ link, expiresIn: "never" });
+router.get("/generate-link", auth, async (req, res) => {
+  try {
+    const token = await getPermanentOnboardingCode(req.user.id);
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const link = `${frontendUrl}/tenant-register/${token}`;
+    res.json({ link, token, expiresIn: "never" });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || "Failed to load onboarding link." });
+  }
 });
 
 router.post("/share-link-email", auth, async (req, res) => {
@@ -494,7 +547,7 @@ router.post("/share-link-email", auth, async (req, res) => {
 // Validate Link (Restored JWT Purpose Check)
 router.get("/validate-link/:token", async (req, res) => {
   try {
-    const decoded = decodeOnboardingLinkToken(req.params.token);
+    const decoded = await decodeOnboardingLinkToken(req.params.token);
 
     // ✅ RESTORED: JWT Purpose Check
     if (decoded.purpose && decoded.purpose !== ONBOARDING_LINK_PURPOSE) {
@@ -531,7 +584,7 @@ router.post("/register-via-link", upload.fields([{ name: "aadharFront", maxCount
 
       let decoded;
       try {
-        decoded = decodeOnboardingLinkToken(linkToken);
+        decoded = await decodeOnboardingLinkToken(linkToken);
       } catch { return res.status(401).json({ message: "Invalid link." }); }
 
       if (decoded.purpose && decoded.purpose !== ONBOARDING_LINK_PURPOSE) {
