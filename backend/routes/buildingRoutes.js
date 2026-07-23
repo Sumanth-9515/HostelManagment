@@ -23,7 +23,7 @@ const makeBeds = (shareType) => Array.from({ length: shareType }, (_, i) => ({ b
 
 // ── Helper: count ALL beds the user currently has across all buildings ─────────
 async function countUserTotalBeds(userId) {
-  const buildings = await Building.find({ owner: userId });
+  const buildings = await Building.find({ owner: userId }).select("floors.rooms.beds").lean();
   let total = 0;
   for (const b of buildings) {
     for (const f of b.floors) {
@@ -40,7 +40,7 @@ async function countUserTotalBeds(userId) {
 // approved extension. Falls back to user.plan.beds for legacy users who
 // registered before planBeds was introduced.
 async function getUserBedLimit(userId) {
-  const user = await User.findById(userId).populate("plan");
+  const user = await User.findById(userId).select("plan planBeds").populate("plan", "beds").lean();
   if (!user) return null;
 
   // Primary: use the accumulated planBeds field (set/incremented by approvalroutes)
@@ -70,7 +70,7 @@ router.post("/", auth, async (req, res) => {
 // 2. GET ALL BUILDINGS
 router.get("/", auth, async (req, res) => {
   try {
-    const buildings = await Building.find({ owner: req.user.id });
+    const buildings = await Building.find({ owner: req.user.id }).lean();
     res.json(buildings);
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
@@ -95,8 +95,19 @@ router.get("/plan/bed-usage", auth, async (req, res) => {
 // 3. OVERVIEW STATS
 router.get("/stats/overview", auth, async (req, res) => {
   try {
-    const buildings = await Building.find({ owner: req.user.id });
-    const tenants = await Tenant.find({ owner: req.user.id, status: "Active", buildingId: { $ne: null } });
+    const buildings = await Building.find({ owner: req.user.id }).lean();
+    const tenants = await Tenant.find({ owner: req.user.id, status: "Active", buildingId: { $ne: null } })
+      .select("buildingId rentAmount")
+      .lean();
+    const tenantStatsByBuildingId = new Map();
+    tenants.forEach((tenant) => {
+      const key = tenant.buildingId?.toString();
+      if (!key) return;
+      const stats = tenantStatsByBuildingId.get(key) || { totalTenants: 0, totalRevenue: 0 };
+      stats.totalTenants += 1;
+      stats.totalRevenue += tenant.rentAmount || 0;
+      tenantStatsByBuildingId.set(key, stats);
+    });
 
     const stats = buildings.map((b) => {
       let totalFloors = b.floors.length;
@@ -110,8 +121,7 @@ router.get("/stats/overview", auth, async (req, res) => {
         }
       }
 
-      const buildingTenants = tenants.filter((t) => t.buildingId?.toString() === b._id.toString());
-      const totalRevenue = buildingTenants.reduce((sum, t) => sum + (t.rentAmount || 0), 0);
+      const tenantStats = tenantStatsByBuildingId.get(b._id.toString()) || { totalTenants: 0, totalRevenue: 0 };
 
       let roomsFilled = 0, roomsAvailable = 0;
       for (const floor of b.floors) {
@@ -126,7 +136,7 @@ router.get("/stats/overview", auth, async (req, res) => {
         buildingId: b._id, buildingName: b.buildingName, address: b.address,
         totalFloors, totalRooms, totalBeds, occupiedBeds,
         availableBeds: totalBeds - occupiedBeds, roomsFilled, roomsAvailable,
-        totalTenants: buildingTenants.length, totalRevenue,
+        totalTenants: tenantStats.totalTenants, totalRevenue: tenantStats.totalRevenue,
       };
     });
     res.json(stats);
@@ -138,30 +148,39 @@ router.get("/search/room", auth, async (req, res) => {
   try {
     const { roomNumber } = req.query;
     if (!roomNumber) return res.status(400).json({ message: "roomNumber query param required." });
-    const buildings = await Building.find({ owner: req.user.id });
+    const buildings = await Building.find({ owner: req.user.id }).lean();
     const results = [];
+    const matchedRooms = [];
+    const tenantIds = [];
     for (const building of buildings) {
       for (const floor of building.floors) {
         for (const room of floor.rooms) {
           if (room.roomNumber === roomNumber) {
-            const bedsWithTenants = await Promise.all(
-              room.beds.map(async (bed) => {
-                let tenantInfo = null;
-                if (bed.tenantId) {
-                  tenantInfo = await Tenant.findById(bed.tenantId).select("name phone email joiningDate rentAmount permanentAddress");
-                }
-                return { ...bed.toObject(), tenant: tenantInfo };
-              })
-            );
-            results.push({
-              buildingId: building._id, buildingName: building.buildingName,
-              floorId: floor._id, floorNumber: floor.floorNumber, floorName: floor.floorName,
-              roomId: room._id, roomNumber: room.roomNumber, shareType: room.shareType, beds: bedsWithTenants,
+            matchedRooms.push({ building, floor, room });
+            room.beds.forEach((bed) => {
+              if (bed.tenantId) tenantIds.push(bed.tenantId);
             });
           }
         }
       }
     }
+    const tenantDocs = tenantIds.length
+      ? await Tenant.find({ _id: { $in: tenantIds }, owner: req.user.id })
+          .select("name phone email joiningDate rentAmount permanentAddress")
+          .lean()
+      : [];
+    const tenantsById = new Map(tenantDocs.map((tenant) => [tenant._id.toString(), tenant]));
+    matchedRooms.forEach(({ building, floor, room }) => {
+      const bedsWithTenants = room.beds.map((bed) => ({
+        ...bed,
+        tenant: bed.tenantId ? tenantsById.get(bed.tenantId.toString()) || null : null,
+      }));
+      results.push({
+        buildingId: building._id, buildingName: building.buildingName,
+        floorId: floor._id, floorNumber: floor.floorNumber, floorName: floor.floorName,
+        roomId: room._id, roomNumber: room.roomNumber, shareType: room.shareType, beds: bedsWithTenants,
+      });
+    });
     if (!results.length) return res.status(404).json({ message: `No room found with number "${roomNumber}".` });
     res.json(results);
   } catch (err) { res.status(500).json({ message: "Server error.", error: err.message }); }

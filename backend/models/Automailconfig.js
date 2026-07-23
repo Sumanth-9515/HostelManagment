@@ -36,4 +36,6 @@ const AutoMailConfigSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+AutoMailConfigSchema.index({ isEnabled: 1 });
+
 export default mongoose.model("AutoMailConfig", AutoMailConfigSchema);

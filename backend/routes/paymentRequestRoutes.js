@@ -363,10 +363,11 @@ function buildRejectedEmail({ tenant, request }) {
 }
 
 function buildRequestResponse(request) {
-  const tenant = request.tenantId;
+  const base = request.toObject ? request.toObject() : request;
+  const tenant = base.tenantId;
   const building = tenant?.allocationInfo || {};
   return {
-    ...request.toObject(),
+    ...base,
     tenant: tenant && {
       _id: tenant._id,
       name: tenant.name,
@@ -438,7 +439,7 @@ router.get("/public/:ownerToken/tenant/:tenantId", async (req, res) => {
       ...(summary.currentRecord && summary.remaining > 0 ? [summary.currentRecord] : []),
     ].filter((record) => record.status !== "Paid" && record.monthYear);
 
-    const history = await RentPayment.find({ tenantId: tenant._id })
+    const history = await RentPayment.find({ owner: ownerId, tenantId: tenant._id })
       .sort({ monthYear: -1 })
       .lean();
     const pendingRequests = await PaymentRequest.find({
@@ -537,7 +538,8 @@ router.get("/", auth, async (req, res) => {
   try {
     const requests = await PaymentRequest.find({ owner: req.user.id })
       .populate("tenantId", "name phone email allocationInfo rentAmount documents")
-      .sort({ submittedAt: -1 });
+      .sort({ submittedAt: -1 })
+      .lean();
     res.json(requests.map(buildRequestResponse));
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });

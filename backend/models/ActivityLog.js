@@ -19,4 +19,7 @@ const ActivityLogSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+ActivityLogSchema.index({ owner: 1, createdAt: -1 });
+ActivityLogSchema.index({ owner: 1, entityType: 1, createdAt: -1 });
+
 export default mongoose.model("ActivityLog", ActivityLogSchema);

@@ -28,4 +28,7 @@ const BuildingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+BuildingSchema.index({ owner: 1, createdAt: -1 });
+BuildingSchema.index({ owner: 1, buildingName: 1 });
+
 export default mongoose.model("Building", BuildingSchema);

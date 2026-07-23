@@ -41,5 +41,8 @@ const RentPaymentSchema = new mongoose.Schema(
 
 // Compound unique index: one record per tenant per month
 RentPaymentSchema.index({ tenantId: 1, monthYear: 1 }, { unique: true });
+RentPaymentSchema.index({ owner: 1, monthYear: 1, tenantId: 1 });
+RentPaymentSchema.index({ owner: 1, tenantId: 1, status: 1 });
+RentPaymentSchema.index({ tenantId: 1, dueDate: 1 });
 
 export default mongoose.model("RentPayment", RentPaymentSchema);

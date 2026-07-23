@@ -40,6 +40,7 @@ const PaymentRequestSchema = new mongoose.Schema(
 );
 
 PaymentRequestSchema.index({ owner: 1, status: 1, submittedAt: -1 });
+PaymentRequestSchema.index({ owner: 1, submittedAt: -1 });
 PaymentRequestSchema.index({ owner: 1, tenantId: 1, monthYear: 1, status: 1 });
 PaymentRequestSchema.index({ "emailActions.approve.tokenHash": 1 });
 PaymentRequestSchema.index({ "emailActions.reject.tokenHash": 1 });

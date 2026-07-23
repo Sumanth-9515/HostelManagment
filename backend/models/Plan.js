@@ -12,4 +12,7 @@ const planSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+planSchema.index({ isActive: 1, price: 1 });
+planSchema.index({ price: 1 });
+
 export default mongoose.model("Plan", planSchema);

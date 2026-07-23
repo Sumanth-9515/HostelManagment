@@ -52,15 +52,47 @@ async function buildUserStats(user) {
   };
 }
 
+function calculateStats(buildings, tenants) {
+  const activeTenants = tenants.filter((t) => t.status === "Active");
+  let totalBeds = 0, occupiedBeds = 0;
+  for (const b of buildings) {
+    for (const f of b.floors) {
+      for (const r of f.rooms) {
+        totalBeds += r.beds.length;
+        occupiedBeds += r.beds.filter((bed) => bed.status === "Occupied").length;
+      }
+    }
+  }
+
+  return {
+    totalBuildings: buildings.length,
+    totalTenants: tenants.length,
+    activeTenants: activeTenants.length,
+    inactiveTenants: tenants.length - activeTenants.length,
+    totalBeds,
+    occupiedBeds,
+    availableBeds: totalBeds - occupiedBeds,
+    totalRevenue: activeTenants.reduce((s, t) => s + (t.rentAmount || 0), 0),
+  };
+}
+
 // ── 1. PLATFORM OVERVIEW STATS ────────────────────────────────────────────────
 // GET /api/master/stats
 router.get("/stats", masterAuth, async (req, res) => {
   try {
-    const totalUsers     = await User.countDocuments({ role: "user" });
-    const blockedUsers   = await User.countDocuments({ role: "user", loginStatus: "blocked" });
-    const totalBuildings = await Building.countDocuments();
-    const totalTenants   = await Tenant.countDocuments();
-    const activeTenants  = await Tenant.countDocuments({ status: "Active" });
+    const [
+      totalUsers,
+      blockedUsers,
+      totalBuildings,
+      totalTenants,
+      activeTenants,
+    ] = await Promise.all([
+      User.countDocuments({ role: "user" }),
+      User.countDocuments({ role: "user", loginStatus: "blocked" }),
+      Building.countDocuments(),
+      Tenant.countDocuments(),
+      Tenant.countDocuments({ status: "Active" }),
+    ]);
 
     const allBuildings = await Building.find().lean();
     let totalBeds = 0, occupiedBeds = 0;
@@ -124,13 +156,32 @@ router.get("/stats", masterAuth, async (req, res) => {
 router.get("/users", masterAuth, async (req, res) => {
   try {
     const users = await User.find({ role: "user" }).select("-password").lean();
+    const ownerIds = users.map((user) => user._id);
+    const [buildings, tenants] = await Promise.all([
+      Building.find({ owner: { $in: ownerIds } }).lean(),
+      Tenant.find({ owner: { $in: ownerIds } }).lean(),
+    ]);
+    const buildingsByOwner = new Map();
+    const tenantsByOwner = new Map();
 
-    const usersWithStats = await Promise.all(
-      users.map(async (user) => ({
-        ...user,
-        stats: await buildUserStats(user),
-      }))
-    );
+    buildings.forEach((building) => {
+      const key = building.owner.toString();
+      if (!buildingsByOwner.has(key)) buildingsByOwner.set(key, []);
+      buildingsByOwner.get(key).push(building);
+    });
+    tenants.forEach((tenant) => {
+      const key = tenant.owner.toString();
+      if (!tenantsByOwner.has(key)) tenantsByOwner.set(key, []);
+      tenantsByOwner.get(key).push(tenant);
+    });
+
+    const usersWithStats = users.map((user) => ({
+      ...user,
+      stats: calculateStats(
+        buildingsByOwner.get(user._id.toString()) || [],
+        tenantsByOwner.get(user._id.toString()) || []
+      ),
+    }));
 
     res.json(usersWithStats);
   } catch (err) {
@@ -152,12 +203,16 @@ router.get("/users/:userId", masterAuth, async (req, res) => {
     const now     = new Date();
     const monthYr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    const tenantsWithPayment = await Promise.all(
-      tenants.map(async (t) => {
-        const rec = await RentPayment.findOne({ tenantId: t._id, monthYear: monthYr }).lean();
-        return { ...t, currentPayment: rec || null };
-      })
-    );
+    const records = await RentPayment.find({
+      owner: user._id,
+      monthYear: monthYr,
+      tenantId: { $in: tenants.map((tenant) => tenant._id) },
+    }).lean();
+    const recordsByTenantId = new Map(records.map((record) => [record.tenantId.toString(), record]));
+    const tenantsWithPayment = tenants.map((t) => ({
+      ...t,
+      currentPayment: recordsByTenantId.get(t._id.toString()) || null,
+    }));
 
     res.json({
       user,

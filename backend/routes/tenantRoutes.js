@@ -135,7 +135,7 @@ async function permanentlyDeleteInactiveTenants(ownerId, tenantIds) {
     throw err;
   }
 
-  const tenants = await Tenant.find({ _id: { $in: uniqueIds }, owner: ownerId });
+  const tenants = await Tenant.find({ _id: { $in: uniqueIds }, owner: ownerId }).lean();
   if (tenants.length !== uniqueIds.length) {
     const err = new Error("One or more candidates were not found.");
     err.statusCode = 404;
@@ -654,7 +654,7 @@ router.get("/notifications", auth, async (req, res) => {
   try {
     const tenants = await Tenant.find({ owner: req.user.id, source: "onboarding-link" })
       .select("name phone email joiningDate rentAmount allocationInfo isVerified createdAt documents")
-      .sort({ createdAt: -1 }).limit(30);
+      .sort({ createdAt: -1 }).limit(30).lean();
     res.json(tenants);
   } catch (err) { res.status(500).json({ message: "Server error." }); }
 });
@@ -719,14 +719,14 @@ router.get("/", auth, async (req, res) => {
   try {
     const filter = { owner: req.user.id };
     if (req.query.source) filter.source = req.query.source;
-    const tenants = await Tenant.find(filter).sort({ createdAt: -1 });
+    const tenants = await Tenant.find(filter).sort({ createdAt: -1 }).lean();
     res.json(tenants);
   } catch (err) { res.status(500).json({ message: "Server error." }); }
 });
 
 router.get("/:id", auth, async (req, res) => {
   try {
-    const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id });
+    const tenant = await Tenant.findOne({ _id: req.params.id, owner: req.user.id }).lean();
     res.json(tenant);
   } catch (err) { res.status(500).json({ message: "Server error." }); }
 });
