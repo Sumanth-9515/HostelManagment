@@ -3,6 +3,9 @@ import User from "../models/User.js";
 import Building from "../models/Building.js";
 import Tenant from "../models/Tenant.js";
 import RentPayment from "../models/Rentpayment.js";
+import PaymentRequest from "../models/PaymentRequest.js";
+import AutoMailConfig from "../models/Automailconfig.js";
+import ActivityLog from "../models/ActivityLog.js";
 import jwt from "jsonwebtoken";
 
 const router = express.Router();
@@ -73,6 +76,40 @@ function calculateStats(buildings, tenants) {
     occupiedBeds,
     availableBeds: totalBeds - occupiedBeds,
     totalRevenue: activeTenants.reduce((s, t) => s + (t.rentAmount || 0), 0),
+  };
+}
+
+async function buildOwnerDeleteSummary(ownerId) {
+  const [buildings, tenantCount, rentPaymentCount, paymentRequestCount, autoMailConfigCount, activityLogCount] = await Promise.all([
+    Building.find({ owner: ownerId }).select("floors").lean(),
+    Tenant.countDocuments({ owner: ownerId }),
+    RentPayment.countDocuments({ owner: ownerId }),
+    PaymentRequest.countDocuments({ owner: ownerId }),
+    AutoMailConfig.countDocuments({ owner: ownerId }),
+    ActivityLog.countDocuments({ owner: ownerId }),
+  ]);
+
+  let totalFloors = 0;
+  let totalRooms = 0;
+  let totalBeds = 0;
+  for (const building of buildings) {
+    totalFloors += building.floors.length;
+    for (const floor of building.floors) {
+      totalRooms += floor.rooms.length;
+      for (const room of floor.rooms) totalBeds += room.beds.length;
+    }
+  }
+
+  return {
+    buildings: buildings.length,
+    floors: totalFloors,
+    rooms: totalRooms,
+    beds: totalBeds,
+    tenants: tenantCount,
+    rentPayments: rentPaymentCount,
+    paymentRequests: paymentRequestCount,
+    autoMailConfigs: autoMailConfigCount,
+    activityLogs: activityLogCount,
   };
 }
 
@@ -226,6 +263,46 @@ router.get("/users/:userId", masterAuth, async (req, res) => {
 });
 
 // ── 4. TOGGLE LOGIN STATUS ────────────────────────────────────────────────────
+// GET /api/master/users/:userId/delete-summary
+router.get("/users/:userId/delete-summary", masterAuth, async (req, res) => {
+  try {
+    const user = await User.findOne({ _id: req.params.userId, role: "user" }).select("name owner email ph").lean();
+    if (!user) return res.status(404).json({ message: "Owner not found." });
+
+    const counts = await buildOwnerDeleteSummary(user._id);
+    res.json({ user, counts });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
+// DELETE /api/master/users/:userId
+router.delete("/users/:userId", masterAuth, async (req, res) => {
+  try {
+    const user = await User.findOne({ _id: req.params.userId, role: "user" }).select("name owner email ph").lean();
+    if (!user) return res.status(404).json({ message: "Owner not found." });
+
+    const counts = await buildOwnerDeleteSummary(user._id);
+    await Promise.all([
+      Building.deleteMany({ owner: user._id }),
+      Tenant.deleteMany({ owner: user._id }),
+      RentPayment.deleteMany({ owner: user._id }),
+      PaymentRequest.deleteMany({ owner: user._id }),
+      AutoMailConfig.deleteMany({ owner: user._id }),
+      ActivityLog.deleteMany({ owner: user._id }),
+    ]);
+    await User.deleteOne({ _id: user._id, role: "user" });
+
+    res.json({
+      message: `Owner ${user.owner || user.name} and all related data deleted successfully.`,
+      userId: user._id,
+      counts,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
 // PATCH /api/master/users/:userId/login-status
 // Body: { loginStatus: "active" | "blocked" }
 router.patch("/users/:userId/login-status", masterAuth, async (req, res) => {

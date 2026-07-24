@@ -11,6 +11,7 @@ export default function MasterOwners() {
   const [selected, setSelected] = useState(null); // selected owner _id for detail drawer
   const [detail,   setDetail]   = useState(null);
   const [dLoading, setDLoading] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ open:false, owner:null, counts:null, loading:false, deleting:false, error:"" });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -33,6 +34,48 @@ export default function MasterOwners() {
       .then((d) => setDetail(d))
       .catch(() => {})
       .finally(() => setDLoading(false));
+  };
+
+  const openDeleteModal = (owner) => {
+    setDeleteModal({ open:true, owner, counts:null, loading:true, deleting:false, error:"" });
+    fetch(`${API}/master/users/${owner._id}/delete-summary`, { headers: { Authorization: `Bearer ${token()}` } })
+      .then(async (r) => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.message || "Unable to load delete details.");
+        }
+        return r.json();
+      })
+      .then((d) => setDeleteModal({ open:true, owner:d.user || owner, counts:d.counts, loading:false, deleting:false, error:"" }))
+      .catch((err) => setDeleteModal((m) => ({ ...m, loading:false, error:err.message || "Unable to load delete details." })));
+  };
+
+  const closeDeleteModal = () => {
+    if (deleteModal.deleting) return;
+    setDeleteModal({ open:false, owner:null, counts:null, loading:false, deleting:false, error:"" });
+  };
+
+  const confirmDeleteOwner = () => {
+    if (!deleteModal.owner?._id || deleteModal.deleting) return;
+    setDeleteModal((m) => ({ ...m, deleting:true, error:"" }));
+    fetch(`${API}/master/users/${deleteModal.owner._id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token()}` },
+    })
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.message || "Owner delete failed.");
+        return d;
+      })
+      .then(() => {
+        setOwners((list) => list.filter((owner) => owner._id !== deleteModal.owner._id));
+        if (selected === deleteModal.owner._id) {
+          setSelected(null);
+          setDetail(null);
+        }
+        setDeleteModal({ open:false, owner:null, counts:null, loading:false, deleting:false, error:"" });
+      })
+      .catch((err) => setDeleteModal((m) => ({ ...m, deleting:false, error:err.message || "Owner delete failed." })));
   };
 
   const filtered = owners.filter((o) =>
@@ -147,6 +190,28 @@ export default function MasterOwners() {
 
         .mo-logout { padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:1.5px solid #fecdd3; background:#fff1f2; color:#e11d48; transition:all 0.18s; }
         .mo-logout:hover { background:#ffe4e6; }
+        .mo-delete-btn { padding:7px 12px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; border:1.5px solid #fecdd3; background:#fff1f2; color:#e11d48; transition:all 0.18s; white-space:nowrap; }
+        .mo-delete-btn:hover { background:#ffe4e6; border-color:#fda4af; }
+        .mo-modal-bg { position:fixed; inset:0; background:rgba(15,23,42,0.42); z-index:120; display:flex; align-items:center; justify-content:center; padding:18px; animation:mo-fadeIn 0.18s; }
+        .mo-modal { width:min(520px,100%); background:#fff; border-radius:14px; box-shadow:0 24px 60px rgba(15,23,42,0.24); border:1px solid #fee2e2; overflow:hidden; }
+        .mo-modal-head { padding:20px 22px 14px; border-bottom:1px solid #f1f5f9; }
+        .mo-modal-title { font-size:18px; font-weight:800; color:#0f172a; margin-bottom:5px; }
+        .mo-modal-sub { font-size:13px; color:#64748b; line-height:1.5; }
+        .mo-warning { margin:14px 22px 0; padding:11px 13px; background:#fff1f2; border:1px solid #fecdd3; border-radius:10px; color:#be123c; font-size:12.5px; font-weight:700; }
+        .mo-delete-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:18px 22px 4px; }
+        .mo-delete-stat { background:#f8f9fc; border:1px solid #eef2f7; border-radius:10px; padding:11px 12px; }
+        .mo-delete-stat strong { display:block; font-size:19px; color:#0f172a; }
+        .mo-delete-stat span { display:block; margin-top:2px; font-size:11px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; font-weight:800; }
+        .mo-modal-error { margin:12px 22px 0; padding:10px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:9px; color:#dc2626; font-size:12.5px; font-weight:700; }
+        .mo-modal-actions { display:flex; justify-content:flex-end; gap:10px; padding:18px 22px 22px; }
+        .mo-cancel-btn, .mo-confirm-delete { height:38px; padding:0 15px; border-radius:9px; font-size:13px; font-weight:800; cursor:pointer; transition:all 0.18s; }
+        .mo-cancel-btn { border:1.5px solid #e2e8f0; background:#fff; color:#475569; }
+        .mo-cancel-btn:hover { background:#f8fafc; }
+        .mo-confirm-delete { border:1.5px solid #dc2626; background:#dc2626; color:#fff; min-width:128px; }
+        .mo-confirm-delete:hover { background:#be123c; border-color:#be123c; }
+        .mo-cancel-btn:disabled, .mo-confirm-delete:disabled { opacity:0.62; cursor:not-allowed; }
+        .mo-spinner { width:15px; height:15px; border:2px solid rgba(255,255,255,0.45); border-top-color:#fff; border-radius:50%; display:inline-block; vertical-align:-3px; margin-right:7px; animation:mo-spin 0.75s linear infinite; }
+        @keyframes mo-spin { to { transform:rotate(360deg); } }
       `}</style>
 
       <div className="mo-root">
@@ -199,11 +264,12 @@ export default function MasterOwners() {
                     <th>Tenants</th>
                     <th>Revenue/mo</th>
                     <th>Status</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={7} style={{ textAlign:"center", color:"#94a3b8", padding:40 }}>No owners found.</td></tr>
+                    <tr><td colSpan={8} style={{ textAlign:"center", color:"#94a3b8", padding:40 }}>No owners found.</td></tr>
                   )}
                   {filtered.map((o, i) => (
                     <tr
@@ -229,6 +295,17 @@ export default function MasterOwners() {
                         ₹{(o.stats?.totalRevenue ?? 0).toLocaleString("en-IN")}
                       </td>
                       <td>{statusBadge(o.loginStatus)}</td>
+                      <td>
+                        <button
+                          className="mo-delete-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDeleteModal(o);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -237,6 +314,62 @@ export default function MasterOwners() {
           )}
         </div>
       </div>
+
+      {deleteModal.open && (
+        <div className="mo-modal-bg" onClick={closeDeleteModal}>
+          <div className="mo-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mo-modal-head">
+              <div className="mo-modal-title">Delete owner permanently?</div>
+              <div className="mo-modal-sub">
+                This will delete {deleteModal.owner?.owner || deleteModal.owner?.name || "this owner"} and all data linked to this owner from the database.
+              </div>
+            </div>
+
+            <div className="mo-warning">
+              This action cannot be undone. Confirm only if you want to remove the complete owner account and all hostel data.
+            </div>
+
+            {deleteModal.loading ? (
+              <div style={{ padding:22, display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="mo-skeleton" style={{ height:58 }} />
+                ))}
+              </div>
+            ) : deleteModal.counts && (
+              <div className="mo-delete-grid">
+                {[
+                  ["Buildings", deleteModal.counts.buildings],
+                  ["Floors", deleteModal.counts.floors],
+                  ["Rooms", deleteModal.counts.rooms],
+                  ["Beds", deleteModal.counts.beds],
+                  ["Tenants", deleteModal.counts.tenants],
+                  ["Rent Records", deleteModal.counts.rentPayments],
+                  ["Payment Requests", deleteModal.counts.paymentRequests],
+                  ["Activity Logs", deleteModal.counts.activityLogs],
+                ].map(([label, value]) => (
+                  <div className="mo-delete-stat" key={label}>
+                    <strong>{fmt(value)}</strong>
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {deleteModal.error && <div className="mo-modal-error">{deleteModal.error}</div>}
+
+            <div className="mo-modal-actions">
+              <button className="mo-cancel-btn" onClick={closeDeleteModal} disabled={deleteModal.deleting}>Cancel</button>
+              <button
+                className="mo-confirm-delete"
+                onClick={confirmDeleteOwner}
+                disabled={deleteModal.loading || deleteModal.deleting || !deleteModal.counts}
+              >
+                {deleteModal.deleting ? <><span className="mo-spinner" />Deleting</> : "Confirm Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Detail drawer */}
       {selected && (
