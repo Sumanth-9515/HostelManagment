@@ -29,6 +29,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
   "https://hostel-management-system-sk.netlify.app",
+  "https://nilayamhostelmanagement.in.net",
   "https://hrms-420.netlify.app",
   "http://localhost:5173",
   "http://localhost:3000",
