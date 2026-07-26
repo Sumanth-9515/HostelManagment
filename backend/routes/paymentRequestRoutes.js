@@ -158,7 +158,7 @@ function escapeHtml(value = "") {
 const ADVANCE_REFUND_RULE = "If you paid an advance, please inform us 10 days before leaving. Your advance will be refunded if you inform us 10 days before. Without 10 days' notice, the advance may not be refunded.";
 
 function advanceRefundRuleHtml(color = "#92400e") {
-  return `<div style="margin:0 0 8px;"><strong style="color:${color};">1. Advance refund notice:</strong> ${escapeHtml(ADVANCE_REFUND_RULE)}</div>`;
+  return `<div style="margin:0 0 8px;"><strong style="color:${color};">1. Advance Refund Rule:</strong> ${escapeHtml(ADVANCE_REFUND_RULE)}</div>`;
 }
 
 function tokenHash(token) {

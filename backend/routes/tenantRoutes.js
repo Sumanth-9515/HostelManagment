@@ -285,7 +285,7 @@ const onboardingShareEmailHtml = ({ link, ownerName }) => `<!DOCTYPE html>
               </a>
             </div>
             <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:14px 16px;margin:22px 0 0;color:#92400e;font-size:13px;line-height:1.7;">
-              <div style="margin:0 0 8px;"><strong>1. Advance refund notice:</strong> ${escapeHtml(ADVANCE_REFUND_RULE)}</div>
+              <div style="margin:0 0 8px;"><strong>1. Advance Refund Rule:</strong> ${escapeHtml(ADVANCE_REFUND_RULE)}</div>
               <div><strong>2.</strong> If the button does not open, copy the link above and paste it in Chrome, then fill the form.</div>
             </div>
           </td>
@@ -339,7 +339,7 @@ const otpEmailHtml = (otpCode) => `
               </span>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #4338ca;border-radius:12px;padding:14px 16px;color:#64748b;font-size:13px;line-height:1.7;">
-              <div style="margin:0 0 8px;"><strong style="color:#4338ca;">1. Advance refund notice:</strong> ${escapeHtml(ADVANCE_REFUND_RULE)}</div>
+              <div style="margin:0 0 8px;"><strong style="color:#4338ca;">1. Advance Refund Rule:</strong> ${escapeHtml(ADVANCE_REFUND_RULE)}</div>
               <div><strong>2.</strong> Do not share this code with anyone. If you did not request this, please ignore this email.</div>
             </div>
           </td>

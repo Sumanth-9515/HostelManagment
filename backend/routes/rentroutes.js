@@ -282,7 +282,7 @@ const ADVANCE_REFUND_RULE = "If you paid an advance, please inform us 10 days be
 function buildNotePoints(...points) {
   return `
     <ol style="margin:0;padding-left:18px;">
-      <li style="margin-bottom:${points.length > 0 ? "8px" : "0"};"><strong>Advance refund notice:</strong> ${ADVANCE_REFUND_RULE}</li>
+      <li style="margin-bottom:${points.length > 0 ? "8px" : "0"};"><strong>Advance Refund Rule:</strong> ${ADVANCE_REFUND_RULE}</li>
       ${points.map((point, index) => `<li style="margin-bottom:${index === points.length - 1 ? "0" : "8px"};">${point}</li>`).join("")}
     </ol>`;
 }
@@ -515,9 +515,9 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
     <hr class="divider" />
     <div class="note-box">
       <ol style="margin:0;padding-left:18px;">
-        <li style="margin-bottom:8px;"><strong>Advance refund notice:</strong> ${ADVANCE_REFUND_RULE}</li>
+        <li style="margin-bottom:8px;"><strong>Advance Refund Rule:</strong> ${ADVANCE_REFUND_RULE}</li>
         <li>
-      💡 <strong>Note:</strong> If you have already made this payment, please disregard this reminder. 
+      💡 <strong>Note:</strong> If you have already made this payment,Please contact your hostel manager then mark your payment in our system.. 
         </li>
       </ol>
     </div>`;
@@ -558,7 +558,7 @@ function buildAdvanceReminderEmail({ tenant, pendingAdvanceAmount = 0, buildingD
     ${buildTenantDetailsSection(tenant, accentColor)}
     ${buildRoomAllocationSection(buildingDetails)}
     <hr class="divider" />
-    <div class="note-box">${buildNotePoints("If you have already made this advance payment, please disregard this reminder.")}</div>`;
+    <div class="note-box">${buildNotePoints("If you have already made this advance payment, Please contact your hostel manager then mark your payment in our system.")}</div>`;
 
   return {
     subject: `Advance Payment Pending - ${fmtINR(pendingAdvanceAmount)}`,
