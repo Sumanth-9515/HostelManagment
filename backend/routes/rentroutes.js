@@ -277,6 +277,16 @@ const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 const fmtINR = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" }) : "—";
 
+const ADVANCE_REFUND_RULE = "If you paid an advance, please inform us 10 days before leaving. Your advance will be refunded if you inform us 10 days before. Without 10 days' notice, the advance may not be refunded.";
+
+function buildNotePoints(...points) {
+  return `
+    <ol style="margin:0;padding-left:18px;">
+      <li style="margin-bottom:${points.length > 0 ? "8px" : "0"};"><strong>Advance refund notice:</strong> ${ADVANCE_REFUND_RULE}</li>
+      ${points.map((point, index) => `<li style="margin-bottom:${index === points.length - 1 ? "0" : "8px"};">${point}</li>`).join("")}
+    </ol>`;
+}
+
 function emailWrapper({ accentColor, icon, title, badgeLabel, badgeColor, bodyHtml }) {
   const senderName = process.env.BREVO_SENDER_NAME || "Hostel Manager";
   return `<!DOCTYPE html>
@@ -504,7 +514,12 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
     ${buildRoomAllocationSection(buildingDetails)}
     <hr class="divider" />
     <div class="note-box">
+      <ol style="margin:0;padding-left:18px;">
+        <li style="margin-bottom:8px;"><strong>Advance refund notice:</strong> ${ADVANCE_REFUND_RULE}</li>
+        <li>
       💡 <strong>Note:</strong> If you have already made this payment, please disregard this reminder. 
+        </li>
+      </ol>
     </div>`;
 
   const subject = hasPreviousPending
@@ -543,7 +558,7 @@ function buildAdvanceReminderEmail({ tenant, pendingAdvanceAmount = 0, buildingD
     ${buildTenantDetailsSection(tenant, accentColor)}
     ${buildRoomAllocationSection(buildingDetails)}
     <hr class="divider" />
-    <div class="note-box"><strong>Note:</strong> If you have already made this advance payment, please disregard this reminder.</div>`;
+    <div class="note-box">${buildNotePoints("If you have already made this advance payment, please disregard this reminder.")}</div>`;
 
   return {
     subject: `Advance Payment Pending - ${fmtINR(pendingAdvanceAmount)}`,
@@ -580,7 +595,7 @@ function buildFullPaymentEmail({ tenant, record, paymentAmount, buildingDetails 
     ${buildTenantDetailsSection(tenant, accentColor)}
     ${buildRoomAllocationSection(buildingDetails)}
     <hr class="divider" />
-    <div class="note-box">🏠 <strong>Keep this as your payment record.</strong></div>`;
+    <div class="note-box">${buildNotePoints("<strong>Keep this as your payment record.</strong>")}</div>`;
 
   return {
     subject: `✅ Rent Paid Successfully — ${month} | ${fmtINR(paymentAmount)}`,
@@ -626,7 +641,7 @@ function buildPartialPaymentEmail({ tenant, record, paymentAmount, buildingDetai
     ${buildTenantDetailsSection(tenant, accentColor)}
     ${buildRoomAllocationSection(buildingDetails)}
     <hr class="divider" />
-    <div class="note-box">⏰ <strong>Action Required:</strong> Please pay the remaining <strong>${fmtINR(remaining)}</strong> to mark this month as fully settled.</div>`;
+    <div class="note-box">${buildNotePoints(`<strong>Action Required:</strong> Please pay the remaining <strong>${fmtINR(remaining)}</strong> to mark this month as fully settled.`)}</div>`;
 
   return {
     subject: `⏳ Partial Payment Received — ${fmtINR(remaining)} Still Due for ${month}`,
@@ -661,7 +676,7 @@ function buildAdvancePaymentEmail({ tenant, paymentAmount, pendingAdvanceAmount,
     ${buildTenantDetailsSection(tenant, accentColor)}
     ${buildRoomAllocationSection(buildingDetails)}
     <hr class="divider" />
-    <div class="note-box"><strong>Keep this as your advance payment record.</strong></div>`;
+    <div class="note-box">${buildNotePoints("<strong>Keep this as your advance payment record.</strong>")}</div>`;
 
   return {
     subject: `Advance Payment Received - ${fmtINR(paymentAmount)}`,

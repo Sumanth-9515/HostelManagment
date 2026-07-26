@@ -155,6 +155,12 @@ function escapeHtml(value = "") {
     .replace(/'/g, "&#039;");
 }
 
+const ADVANCE_REFUND_RULE = "If you paid an advance, please inform us 10 days before leaving. Your advance will be refunded if you inform us 10 days before. Without 10 days' notice, the advance may not be refunded.";
+
+function advanceRefundRuleHtml(color = "#92400e") {
+  return `<div style="margin:0 0 8px;"><strong style="color:${color};">1. Advance refund notice:</strong> ${escapeHtml(ADVANCE_REFUND_RULE)}</div>`;
+}
+
 function tokenHash(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -243,7 +249,8 @@ function buildOwnerPaymentRequestEmail({ owner, tenant, request, approveToken, r
             </div>
 
             <div style="margin-top:22px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:12px 14px;color:#92400e;font-size:12px;line-height:1.7;">
-              These buttons open a secure confirmation page and use one-time action tokens. Links expire in 3 days.
+              ${advanceRefundRuleHtml("#92400e")}
+              <div><strong>2.</strong> These buttons open a secure confirmation page and use one-time action tokens. Links expire in 3 days.</div>
             </div>
           </td>
         </tr>
@@ -282,7 +289,8 @@ function buildRejectedEmail({ tenant, request }) {
       </div>`
     : `
       <div style="margin:24px 0 0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;color:#475569;font-size:14px;line-height:1.7;">
-        Please contact the owner for more details about this rejection.
+        ${advanceRefundRuleHtml("#475569")}
+        <div><strong>2.</strong> Please contact the owner for more details about this rejection.</div>
       </div>`;
 
   return {
@@ -343,7 +351,8 @@ function buildRejectedEmail({ tenant, request }) {
               ${reasonHtml}
 
               <div style="margin-top:24px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px 16px;color:#1e3a8a;font-size:13px;line-height:1.7;">
-                You can submit a corrected payment request from the payment request form, or contact the owner if you need clarification.
+                ${advanceRefundRuleHtml("#1e3a8a")}
+                <div><strong>2.</strong> You can submit a corrected payment request from the payment request form, or contact the owner if you need clarification.</div>
               </div>
             </td>
           </tr>

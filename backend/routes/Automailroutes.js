@@ -202,6 +202,16 @@ const fmtINR = (n) => new Intl.NumberFormat("en-IN", { style: "currency", curren
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 // ── Email Templates (Fully Responsive with Tables instead of Flex) ──
+const ADVANCE_REFUND_RULE = "If you paid an advance, please inform us 10 days before leaving. Your advance will be refunded if you inform us 10 days before. Without 10 days' notice, the advance may not be refunded.";
+
+function buildNotePoints(...points) {
+  return `
+    <ol style="margin:0;padding-left:18px;">
+      <li style="margin-bottom:${points.length > 0 ? "8px" : "0"};"><strong>Advance refund notice:</strong> ${ADVANCE_REFUND_RULE}</li>
+      ${points.map((point, index) => `<li style="margin-bottom:${index === points.length - 1 ? "0" : "8px"};">${point}</li>`).join("")}
+    </ol>`;
+}
+
 function emailWrapper({ accentColor, icon, title, badgeLabel, bodyHtml }) {
   const senderName = process.env.BREVO_SENDER_NAME || "Hostel Manager";
   return `<!DOCTYPE html>
@@ -421,7 +431,7 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
     ${buildTenantDetailsSection(tenant, accentColor)}
     ${buildRoomAllocationSection(buildingDetails)}
     
-    <div class="note-box">💡 <strong>Note:</strong> If you have already made this payment, please disregard this reminder.</div>`;
+    <div class="note-box">${buildNotePoints("If you have already made this payment, please disregard this reminder.")}</div>`;
 
   const subject = hasPreviousPending ? `🚨 Urgent: Rent Arrears — ${fmtINR(totalAccumulatedDue)} Outstanding` : isOverdue ? `⚠️ Rent Overdue — ${month}` : `🔔 Rent Reminder: Due ${daysUntilDue === 0 ? "Today" : `in ${daysUntilDue} Days`} — ${month}`;
   const icon  = hasPreviousPending ? "🚨" : isOverdue ? "⚠️" : "🔔";
@@ -465,7 +475,7 @@ function buildAdvanceReminderEmail({ tenant, pendingAdvanceAmount = 0, buildingD
     </div>
     ${buildTenantDetailsSection(tenant, accentColor)}
     ${buildRoomAllocationSection(buildingDetails)}
-    <div class="note-box"><strong>Note:</strong> If you have already made this advance payment, please disregard this reminder.</div>`;
+    <div class="note-box">${buildNotePoints("If you have already made this advance payment, please disregard this reminder.")}</div>`;
 
   return {
     subject: `Advance Payment Pending - ${fmtINR(pendingAdvanceAmount)}`,

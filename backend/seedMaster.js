@@ -15,7 +15,7 @@ const MASTER = {
   name: "Master Admin",
   owner: "Sumanth Reddy",
   ph: "0000000000",
-  email: "mykalasumanthreddy@gmail.com",
+  email: "nilayam@gmail.com",
   password: "Sumanth@2026",
   address: "Master HQ",
   role: "master",
