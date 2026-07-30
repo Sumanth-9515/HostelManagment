@@ -169,7 +169,7 @@ export async function buildTenantSummary(tenant, ownerId, lookaheadMs = 0) {
 
 export async function getBuildingDetailsForTenant(tenant) {
   if (!tenant.buildingId) return null;
-  
+
   const building = await Building.findById(tenant.buildingId).lean();
   if (!building) return null;
 
@@ -232,21 +232,21 @@ function sortDueResults(a, b) {
 
 function toResponseItem(item) {
   return {
-    tenant:              item.tenant,
-    record:              item.currentRecord,
-    remaining:           item.remaining,
-    pendingMonths:       item.pendingMonths,
-    arrearsTotal:        item.arrearsTotal,
-    advanceAmount:       item.advanceAmount,
-    paidAdvanceAmount:   item.paidAdvanceAmount,
-    pendingAdvanceAmount:item.pendingAdvanceAmount,
+    tenant: item.tenant,
+    record: item.currentRecord,
+    remaining: item.remaining,
+    pendingMonths: item.pendingMonths,
+    arrearsTotal: item.arrearsTotal,
+    advanceAmount: item.advanceAmount,
+    paidAdvanceAmount: item.paidAdvanceAmount,
+    pendingAdvanceAmount: item.pendingAdvanceAmount,
     totalAccumulatedDue: item.totalAccumulatedDue,
-    hasPreviousPending:  item.hasPreviousPending,
-    pendingMonthsCount:  item.pendingMonthsCount,
-    isOverdue:           item.isOverdue,
-    daysOverdue:         item.daysOverdue,
-    daysUntilDue:        item.daysUntilDue,
-    dueDate:             item.dueDate,
+    hasPreviousPending: item.hasPreviousPending,
+    pendingMonthsCount: item.pendingMonthsCount,
+    isOverdue: item.isOverdue,
+    daysOverdue: item.daysOverdue,
+    daysUntilDue: item.daysUntilDue,
+    dueDate: item.dueDate,
   };
 }
 
@@ -384,10 +384,10 @@ function emailWrapper({ accentColor, icon, title, badgeLabel, badgeColor, bodyHt
 
 function buildTenantDetailsSection(tenant, accentColor) {
   const rows = [
-    tenant.name        && { label: "Full Name",      value: tenant.name },
-    tenant.email       && { label: "Email Address",  value: tenant.email },
-    tenant.phone       && { label: "Phone",          value: tenant.phone },
-    tenant.joiningDate && { label: "Member Since",   value: fmtDate(tenant.joiningDate) },
+    tenant.name && { label: "Full Name", value: tenant.name },
+    tenant.email && { label: "Email Address", value: tenant.email },
+    tenant.phone && { label: "Phone", value: tenant.phone },
+    tenant.joiningDate && { label: "Member Since", value: fmtDate(tenant.joiningDate) },
   ].filter(Boolean);
 
   return `
@@ -408,11 +408,11 @@ function buildTenantDetailsSection(tenant, accentColor) {
 function buildRoomAllocationSection(buildingDetails) {
   if (!buildingDetails) return "";
   const rows = [
-    buildingDetails.buildingName  && { label: "Building",     value: buildingDetails.buildingName, icon: "🏢" },
-    buildingDetails.address       && { label: "Address",      value: buildingDetails.address,       icon: "📍" },
-    buildingDetails.floorName     && { label: "Floor",        value: `${buildingDetails.floorName}${buildingDetails.floorNumber ? ` (Floor ${buildingDetails.floorNumber})` : ""}`, icon: "🏗️" },
-    buildingDetails.roomNumber    && { label: "Room No.",     value: `Room ${buildingDetails.roomNumber}`, icon: "🚪" },
-    buildingDetails.shareType     && { label: "Occupancy",    value: buildingDetails.shareType,     icon: "🛏️" },
+    buildingDetails.buildingName && { label: "Building", value: buildingDetails.buildingName, icon: "🏢" },
+    buildingDetails.address && { label: "Address", value: buildingDetails.address, icon: "📍" },
+    buildingDetails.floorName && { label: "Floor", value: `${buildingDetails.floorName}${buildingDetails.floorNumber ? ` (Floor ${buildingDetails.floorNumber})` : ""}`, icon: "🏗️" },
+    buildingDetails.roomNumber && { label: "Room No.", value: `Room ${buildingDetails.roomNumber}`, icon: "🚪" },
+    buildingDetails.shareType && { label: "Occupancy", value: buildingDetails.shareType, icon: "🛏️" },
   ].filter(Boolean);
 
   if (rows.length === 0) return "";
@@ -441,17 +441,17 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
 
   let statusText, badgeLabel, statusPill;
   if (hasPreviousPending) {
-    badgeLabel  = `${pendingMonths.length} Month${pendingMonths.length > 1 ? "s" : ""} Arrears`;
-    statusText  = `Your account has <strong style="color:#c53030;">unpaid rent from previous months</strong>. Total outstanding including current month is <strong style="color:#c53030;">${fmtINR(totalAccumulatedDue)}</strong>. Please clear all dues at the earliest to avoid penalties.`;
-    statusPill  = `<span class="status-pill">🚨 Urgent — Multiple Dues Pending</span>`;
+    badgeLabel = `${pendingMonths.length} Month${pendingMonths.length > 1 ? "s" : ""} Arrears`;
+    statusText = `Your account has <strong style="color:#c53030;">unpaid rent from previous months</strong>. Total outstanding including current month is <strong style="color:#c53030;">${fmtINR(totalAccumulatedDue)}</strong>. Please clear all dues at the earliest to avoid penalties.`;
+    statusPill = `<span class="status-pill">🚨 Urgent — Multiple Dues Pending</span>`;
   } else if (isOverdue) {
-    badgeLabel  = `${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue`;
-    statusText  = `Your rent payment for <strong>${month}</strong> is <strong style="color:#c53030;">overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}</strong>. Please pay immediately to avoid late charges.`;
-    statusPill  = `<span class="status-pill">⚠️ ${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue</span>`;
+    badgeLabel = `${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue`;
+    statusText = `Your rent payment for <strong>${month}</strong> is <strong style="color:#c53030;">overdue by ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}</strong>. Please pay immediately to avoid late charges.`;
+    statusPill = `<span class="status-pill">⚠️ ${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} Overdue</span>`;
   } else {
-    badgeLabel  = daysUntilDue === 0 ? "Due Today" : `Due in ${daysUntilDue} Day${daysUntilDue > 1 ? "s" : ""}`;
-    statusText  = `This is a friendly reminder that your rent payment for <strong>${month}</strong> is ${daysUntilDue === 0 ? "<strong>due today</strong>" : `due in <strong>${daysUntilDue} day${daysUntilDue > 1 ? "s" : ""}</strong>`}. Kindly ensure timely payment.`;
-    statusPill  = `<span class="status-pill">🕐 ${badgeLabel}</span>`;
+    badgeLabel = daysUntilDue === 0 ? "Due Today" : `Due in ${daysUntilDue} Day${daysUntilDue > 1 ? "s" : ""}`;
+    statusText = `This is a friendly reminder that your rent payment for <strong>${month}</strong> is ${daysUntilDue === 0 ? "<strong>due today</strong>" : `due in <strong>${daysUntilDue} day${daysUntilDue > 1 ? "s" : ""}</strong>`}. Kindly ensure timely payment.`;
+    statusPill = `<span class="status-pill">🕐 ${badgeLabel}</span>`;
   }
 
   const arrearsHtml = hasPreviousPending ? `
@@ -525,10 +525,10 @@ function buildReminderEmail({ tenant, record, buildingDetails, isOverdue, daysOv
   const subject = hasPreviousPending
     ? `🚨 Urgent: ${pendingMonths.length} Month(s) Rent Arrears — ${fmtINR(totalAccumulatedDue)} Total Outstanding`
     : isOverdue
-    ? `⚠️ Rent Overdue by ${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} — ${month}`
-    : `🔔 Rent Reminder: Due ${daysUntilDue === 0 ? "Today" : `in ${daysUntilDue} Day${daysUntilDue > 1 ? "s" : ""}`} — ${month}`;
+      ? `⚠️ Rent Overdue by ${daysOverdue} Day${daysOverdue > 1 ? "s" : ""} — ${month}`
+      : `🔔 Rent Reminder: Due ${daysUntilDue === 0 ? "Today" : `in ${daysUntilDue} Day${daysUntilDue > 1 ? "s" : ""}`} — ${month}`;
 
-  const icon  = hasPreviousPending ? "🚨" : isOverdue ? "⚠️" : "🔔";
+  const icon = hasPreviousPending ? "🚨" : isOverdue ? "⚠️" : "🔔";
   const title = hasPreviousPending ? "Urgent: Rent Arrears Notice" : isOverdue ? "Rent Payment Overdue" : "Rent Payment Reminder";
 
   return { subject, html: emailWrapper({ accentColor, icon, title, badgeLabel, bodyHtml }) };
@@ -657,8 +657,8 @@ function buildAdvancePaymentEmail({ tenant, paymentAmount, pendingAdvanceAmount,
     <p class="sub-text">
       We have received your advance payment of <strong style="color:#276749;">${fmtINR(paymentAmount)}</strong>.
       ${pendingAdvanceAmount > 0
-        ? `Your remaining advance balance is <strong style="color:#d97706;">${fmtINR(pendingAdvanceAmount)}</strong>.`
-        : "Your advance amount is now fully paid."}
+      ? `Your remaining advance balance is <strong style="color:#d97706;">${fmtINR(pendingAdvanceAmount)}</strong>.`
+      : "Your advance amount is now fully paid."}
     </p>
     <div class="amount-box">
       <div class="amount-label">${pendingAdvanceAmount > 0 ? "Advance Balance Remaining" : "Advance Payment Complete"}</div>
@@ -706,7 +706,7 @@ router.get("/due", auth, async (req, res) => {
     ).lean();
 
     if (tenants.length === 0) {
-      return res.json({ 
+      return res.json({
         data: [], page, limit: 0, total: 0, totalPages: 0,
         stats: { totalAlerts: 0, totalOverdueOrCarryForward: 0, totalDueSoon: 0, totalPendingAmount: 0, carryForwardTenantsCount: 0 }
       });
@@ -742,11 +742,11 @@ router.get("/due", auth, async (req, res) => {
       }
     });
 
-    const total      = filtered.length;
+    const total = filtered.length;
     const totalPages = total > 0 ? 1 : 0;
-    const data       = filtered.map(toResponseItem);
+    const data = filtered.map(toResponseItem);
 
-    res.json({ 
+    res.json({
       data, page, limit: total, total, totalPages,
       stats: {
         totalAlerts: total,
@@ -949,33 +949,33 @@ router.get("/monthly-summary", auth, async (req, res) => {
     const recordsByTenantId = new Map(records.map((record) => [record.tenantId.toString(), record]));
 
     const items = tenants.map((tenant) => {
-        const record = recordsByTenantId.get(tenant._id.toString());
-        const buildingDetails = buildingDetailsByTenantId.get(tenant._id.toString()) || null;
-        const rentAmount = Number(record?.rentAmount ?? tenant.rentAmount ?? 0);
-        const paidAmount = Number(record?.paidAmount ?? 0);
-        const remaining = Math.max(rentAmount - paidAmount, 0);
-        const status = record?.status || (paidAmount >= rentAmount && rentAmount > 0 ? "Paid" : paidAmount > 0 ? "Partial" : "Due");
+      const record = recordsByTenantId.get(tenant._id.toString());
+      const buildingDetails = buildingDetailsByTenantId.get(tenant._id.toString()) || null;
+      const rentAmount = Number(record?.rentAmount ?? tenant.rentAmount ?? 0);
+      const paidAmount = Number(record?.paidAmount ?? 0);
+      const remaining = Math.max(rentAmount - paidAmount, 0);
+      const status = record?.status || (paidAmount >= rentAmount && rentAmount > 0 ? "Paid" : paidAmount > 0 ? "Partial" : "Due");
 
-        return {
-          tenant: {
-            _id: tenant._id,
-            name: tenant.name,
-            phone: tenant.phone,
-            email: tenant.email,
-            allocationInfo: tenant.allocationInfo,
-          },
-          buildingDetails,
-          record: record || {
-            tenantId: tenant._id,
-            monthYear: parsed.key,
-            dueDate: getDueDateForCycle(tenant.joiningDate, parsed.year, parsed.month),
-            rentAmount,
-            paidAmount,
-            status,
-          },
-          remaining,
-        };
-      });
+      return {
+        tenant: {
+          _id: tenant._id,
+          name: tenant.name,
+          phone: tenant.phone,
+          email: tenant.email,
+          allocationInfo: tenant.allocationInfo,
+        },
+        buildingDetails,
+        record: record || {
+          tenantId: tenant._id,
+          monthYear: parsed.key,
+          dueDate: getDueDateForCycle(tenant.joiningDate, parsed.year, parsed.month),
+          rentAmount,
+          paidAmount,
+          status,
+        },
+        remaining,
+      };
+    });
 
     const summary = items.reduce(
       (acc, item) => {
@@ -1166,14 +1166,14 @@ router.post("/pay", auth, async (req, res) => {
     else if (record.paidAmount > 0) record.status = "Partial";
 
     await record.save();
-       await logActivity(
-      req.user.id, 
-      "PAYMENT", 
-      "Rent", 
+    await logActivity(
+      req.user.id,
+      "PAYMENT",
+      "Rent",
       `Received rent payment of ₹${actualPay} from ${tenant.name}`
     );
 
-  if (tenant.email) {
+    if (tenant.email) {
       try {
         // 1. Fetch building details
         const buildingDetails = await getBuildingDetailsForTenant(tenant);
@@ -1192,6 +1192,50 @@ router.post("/pay", auth, async (req, res) => {
     }
 
     res.json({ message: `Payment of ₹${actualPay} recorded.`, record });
+  } catch (err) {
+    res.status(500).json({ message: "Server error.", error: err.message });
+  }
+});
+
+router.put("/advance/:tenantId", auth, async (req, res) => {
+  try {
+    const { advanceAmount, paidAdvanceAmount, note = "" } = req.body;
+    const correctedAdvanceAmount = Number(advanceAmount);
+    const correctedPaidAdvanceAmount = Number(paidAdvanceAmount);
+
+    if (Number.isNaN(correctedAdvanceAmount) || correctedAdvanceAmount < 0) {
+      return res.status(400).json({ message: "Enter a valid advance amount." });
+    }
+
+    if (Number.isNaN(correctedPaidAdvanceAmount) || correctedPaidAdvanceAmount < 0) {
+      return res.status(400).json({ message: "Enter a valid paid advance amount." });
+    }
+
+    if (correctedPaidAdvanceAmount > correctedAdvanceAmount) {
+      return res.status(400).json({ message: "Paid advance cannot exceed advance amount." });
+    }
+
+    const tenant = await Tenant.findOne({ _id: req.params.tenantId, owner: req.user.id });
+    if (!tenant) return res.status(404).json({ message: "Tenant not found." });
+
+    const previousAdvanceAmount = Number(tenant.advanceAmount || 0);
+    const previousPaidAdvanceAmount = Number(tenant.paidAdvanceAmount || 0);
+    tenant.advanceAmount = correctedAdvanceAmount;
+    tenant.paidAdvanceAmount = correctedPaidAdvanceAmount;
+    await tenant.save();
+
+    await logActivity(
+      req.user.id,
+      "UPDATE",
+      "Rent",
+      `Corrected advance for ${tenant.name}: advance ₹${previousAdvanceAmount} to ₹${correctedAdvanceAmount}, paid ₹${previousPaidAdvanceAmount} to ₹${correctedPaidAdvanceAmount}${note ? ` (${note})` : ""}`
+    );
+
+    res.json({
+      message: "Advance payment updated.",
+      tenant,
+      pendingAdvanceAmount: Math.max(correctedAdvanceAmount - correctedPaidAdvanceAmount, 0),
+    });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
   }
@@ -1268,16 +1312,16 @@ router.post("/send-reminder", auth, async (req, res) => {
     // 2. Generate the email content using the appropriate reminder template
     const { subject, html } = isAdvanceOnly
       ? buildAdvanceReminderEmail({
-          tenant,
-          pendingAdvanceAmount: summary.pendingAdvanceAmount,
-          buildingDetails,
-        })
-      : buildReminderEmail({ 
-          tenant, 
-          record: summary.currentRecord, 
-          buildingDetails, 
-          ...summary 
-        });
+        tenant,
+        pendingAdvanceAmount: summary.pendingAdvanceAmount,
+        buildingDetails,
+      })
+      : buildReminderEmail({
+        tenant,
+        record: summary.currentRecord,
+        buildingDetails,
+        ...summary
+      });
 
     // 3. Send the email
     await sendBrevoEmail(tenant.email, tenant.name, subject, html);

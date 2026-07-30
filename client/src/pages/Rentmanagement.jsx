@@ -783,6 +783,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
   const [vacating, setVacating] = useState(false);
   const [vacateError, setVacateError] = useState("");
   const [editingPayment, setEditingPayment] = useState(null);
+  const [editingAdvance, setEditingAdvance] = useState(false);
 
   const handleDocFileChange = (field, file) => {
     if (!file) return;
@@ -884,6 +885,12 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
 
   const handlePaymentCorrectionSaved = async (result) => {
     setEditingPayment(null);
+    await load();
+    if (onTenantUpdated) onTenantUpdated(result);
+  };
+
+  const handleAdvanceCorrectionSaved = async (result) => {
+    setEditingAdvance(false);
     await load();
     if (onTenantUpdated) onTenantUpdated(result);
   };
@@ -1124,8 +1131,21 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
                   buildingDetails?.bedNumber && ["Bed", `Bed ${buildingDetails.bedNumber}`],
                 ].filter(Boolean).map(([label, val]) => (
                   <div key={label} className="rounded-xl bg-gray-50 border border-gray-200 p-3">
-                    <p className="text-gray-500 text-[11px] uppercase tracking-wide mb-0.5">{label}</p>
-                    <p className="text-gray-900 text-sm font-medium break-words">{val || "—"}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-gray-500 text-[11px] uppercase tracking-wide mb-0.5">{label}</p>
+                        <p className="text-gray-900 text-sm font-medium break-words">{val || "—"}</p>
+                      </div>
+                      {label === "Advance Paid" && Number(paidAdvanceAmount || 0) > 0 && (
+                        <button
+                          onClick={() => setEditingAdvance(true)}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-500 border border-blue-200 text-blue-700 hover:text-white font-bold transition-colors shrink-0"
+                          title="Edit advance"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1214,6 +1234,7 @@ function TenantDetailModal({ tenantId, onClose, onPayNow, onPaymentDone, onTenan
       {vacateError && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[80] bg-rose-600 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-semibold">❌ {vacateError}</div>}
       {viewingDoc && <DocumentViewer imageUrl={viewingDoc} onClose={() => setViewingDoc(null)} />}
       {editingPayment && <EditPaymentModal record={editingPayment} onClose={() => setEditingPayment(null)} onSuccess={handlePaymentCorrectionSaved} />}
+      {editingAdvance && <EditAdvanceModal tenant={tenant} onClose={() => setEditingAdvance(false)} onSuccess={handleAdvanceCorrectionSaved} />}
     </>
   );
 }
@@ -1284,6 +1305,87 @@ function EditPaymentModal({ record, onClose, onSuccess }) {
           <div>
             <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Correct Paid Amount (₹)</label>
             <input ref={inputRef} type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSave()} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-blue-400" min="0" max={rentAmount} />
+          </div>
+          <div>
+            <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Reason / Note</label>
+            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm focus:outline-none focus:border-blue-400" placeholder="Wrong entry corrected" />
+          </div>
+          {error && <p className="text-rose-600 text-sm bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
+          <div className="flex gap-3">
+            <button onClick={onClose} disabled={loading} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors disabled:opacity-50">Cancel</button>
+            <button onClick={handleSave} disabled={loading} className="flex-1 py-3 rounded-xl font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all text-sm">{loading ? "Saving..." : "Save"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditAdvanceModal({ tenant, onClose, onSuccess }) {
+  const [advanceAmount, setAdvanceAmount] = useState(tenant?.advanceAmount ?? 0);
+  const [paidAdvanceAmount, setPaidAdvanceAmount] = useState(tenant?.paidAdvanceAmount ?? 0);
+  const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef(null);
+  const expectedAdvance = Number(advanceAmount || 0);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleSave = async () => {
+    const advanceVal = Number(advanceAmount);
+    const paidVal = Number(paidAdvanceAmount);
+    if (Number.isNaN(advanceVal) || advanceVal < 0) return setError("Enter a valid advance amount.");
+    if (Number.isNaN(paidVal) || paidVal < 0) return setError("Enter a valid paid advance amount.");
+    if (paidVal > advanceVal) return setError(`Paid advance cannot exceed advance amount of ${fmt(advanceVal)}.`);
+    setLoading(true); setError("");
+    try {
+      const r = await fetch(`${API}/rent/advance/${tenant._id}`, {
+        method: "PUT",
+        headers: authHeader(),
+        body: JSON.stringify({ advanceAmount: advanceVal, paidAdvanceAmount: paidVal, note }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message || "Failed to update advance.");
+      onSuccess(d);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!tenant) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-white">
+          <div>
+            <h3 className="text-gray-900 font-bold">Edit Advance</h3>
+            <p className="text-gray-500 text-xs mt-0.5">{tenant.name}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg transition-colors">x</button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-gray-500 text-[11px] uppercase tracking-wide">Advance Amount</p>
+              <p className="text-gray-900 text-sm font-black mt-1">{fmt(tenant.advanceAmount || 0)}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-gray-500 text-[11px] uppercase tracking-wide">Current Paid</p>
+              <p className="text-emerald-600 text-sm font-black mt-1">{fmt(tenant.paidAdvanceAmount || 0)}</p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Correct Advance Amount (₹)</label>
+            <input type="number" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-blue-400" min="0" />
+            <p className="mt-1 text-[11px] text-gray-400">Only this tenant advance will change.</p>
+          </div>
+          <div>
+            <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Correct Paid Advance (₹)</label>
+            <input ref={inputRef} type="number" value={paidAdvanceAmount} onChange={(e) => setPaidAdvanceAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSave()} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-lg font-bold focus:outline-none focus:border-blue-400" min="0" max={expectedAdvance} />
           </div>
           <div>
             <label className="block text-gray-600 text-xs uppercase tracking-wide mb-1.5">Reason / Note</label>
