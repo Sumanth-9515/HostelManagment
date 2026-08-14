@@ -13,6 +13,12 @@ import RentPayment from "../models/Rentpayment.js";
 import PaymentRequest from "../models/PaymentRequest.js";
 import User from "../models/User.js";
 import {
+  CLOUDINARY_IMAGE_WIDTHS,
+  optimizeCloudinaryImageUrl,
+  withOptimizedPaymentRequestReceipt,
+  withOptimizedTenantDocuments,
+} from "../utils/cloudinaryDelivery.js";
+import {
   buildTenantSummary,
   getBuildingDetailsForTenant,
   recordTenantPayment,
@@ -190,8 +196,9 @@ function buildOwnerPaymentRequestEmail({ owner, tenant, request, approveToken, r
   const location = tenant.allocationInfo?.buildingName
     ? `${tenant.allocationInfo.buildingName}, Floor ${tenant.allocationInfo.floorNumber || "-"}, Room ${tenant.allocationInfo.roomNumber || "-"}`
     : "Not assigned";
-  const receiptHtml = request.receiptUrl
-    ? `<a href="${escapeHtml(request.receiptUrl)}" target="_blank" style="display:inline-block;margin-top:14px;background:#ffffff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:800;text-decoration:none;">View Receipt</a>`
+  const receiptUrl = optimizeCloudinaryImageUrl(request.receiptUrl, { width: CLOUDINARY_IMAGE_WIDTHS.receipt });
+  const receiptHtml = receiptUrl
+    ? `<a href="${escapeHtml(receiptUrl)}" target="_blank" style="display:inline-block;margin-top:14px;background:#ffffff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:800;text-decoration:none;">View Receipt</a>`
     : "";
   const cashHtml = request.paymentMode === "Cash"
     ? `<tr><td style="padding:9px 0;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0;">Cash Handover</td><td style="padding:9px 0;color:#111827;font-size:13px;font-weight:800;text-align:right;border-bottom:1px solid #e2e8f0;">${escapeHtml(fmtDateTime(request.cashHandoverAt))}</td></tr>`
@@ -372,19 +379,26 @@ function buildRejectedEmail({ tenant, request }) {
 }
 
 function buildRequestResponse(request) {
-  const base = request.toObject ? request.toObject() : request;
+  const base = withOptimizedPaymentRequestReceipt(request);
   const tenant = base.tenantId;
+  const optimizedTenant = tenant && withOptimizedTenantDocuments(tenant, {
+    passportWidth: CLOUDINARY_IMAGE_WIDTHS.card,
+    passportHeight: CLOUDINARY_IMAGE_WIDTHS.card,
+    passportCrop: "fill",
+    documentWidth: CLOUDINARY_IMAGE_WIDTHS.documentThumb,
+  });
   const building = tenant?.allocationInfo || {};
   return {
     ...base,
     tenant: tenant && {
-      _id: tenant._id,
-      name: tenant.name,
-      email: tenant.email,
-      phone: tenant.phone,
-      rentAmount: tenant.rentAmount,
-      allocationInfo: tenant.allocationInfo,
-      documents: tenant.documents,
+      _id: optimizedTenant._id,
+      name: optimizedTenant.name,
+      email: optimizedTenant.email,
+      phone: optimizedTenant.phone,
+      rentAmount: optimizedTenant.rentAmount,
+      allocationInfo: optimizedTenant.allocationInfo,
+      documents: optimizedTenant.documents,
+      originalDocuments: optimizedTenant.originalDocuments,
       room: building.roomNumber,
       building: building.buildingName,
       floor: building.floorNumber,
@@ -425,7 +439,12 @@ router.get("/public/:ownerToken/search", async (req, res) => {
       .limit(12)
       .lean();
 
-    res.json(tenants);
+    res.json(tenants.map((tenant) => withOptimizedTenantDocuments(tenant, {
+      passportWidth: CLOUDINARY_IMAGE_WIDTHS.avatar,
+      passportHeight: CLOUDINARY_IMAGE_WIDTHS.avatar,
+      passportCrop: "fill",
+      documentWidth: CLOUDINARY_IMAGE_WIDTHS.documentThumb,
+    })));
   } catch (err) {
     res.status(err.statusCode || 401).json({ message: err.message || "Invalid link." });
   }
@@ -460,7 +479,14 @@ router.get("/public/:ownerToken/tenant/:tenantId", async (req, res) => {
       .lean();
 
     const buildingDetails = await getBuildingDetailsForTenant(tenant);
-    res.json({ tenant, buildingDetails, pendingMonths, summary, history, pendingRequests });
+    res.json({
+      tenant: withOptimizedTenantDocuments(tenant),
+      buildingDetails,
+      pendingMonths,
+      summary,
+      history,
+      pendingRequests: pendingRequests.map(withOptimizedPaymentRequestReceipt),
+    });
   } catch (err) {
     res.status(err.statusCode || 401).json({ message: err.message || "Invalid link." });
   }
@@ -534,7 +560,10 @@ router.post("/public/:ownerToken", upload.single("receipt"), async (req, res) =>
     sendOwnerPaymentRequestEmail({ ownerId, tenant: tenant.toObject(), request, approveToken, rejectToken })
       .catch((err) => console.error("Owner payment request email failed:", err.message));
 
-    res.status(201).json({ message: "Payment request submitted successfully.", request });
+    res.status(201).json({
+      message: "Payment request submitted successfully.",
+      request: withOptimizedPaymentRequestReceipt(request),
+    });
   } catch (err) {
     const duplicatePending = err.code === 11000;
     res.status(duplicatePending ? 409 : err.statusCode || 500).json({
@@ -601,26 +630,34 @@ async function findEmailActionRequest(rawToken) {
 
 function emailActionResponse(request, action) {
   const tenant = request.tenantId;
+  const optimizedTenant = tenant && withOptimizedTenantDocuments(tenant, {
+    passportWidth: CLOUDINARY_IMAGE_WIDTHS.card,
+    passportHeight: CLOUDINARY_IMAGE_WIDTHS.card,
+    passportCrop: "fill",
+    documentWidth: CLOUDINARY_IMAGE_WIDTHS.documentThumb,
+  });
   const building = tenant?.allocationInfo || {};
+  const optimizedRequest = withOptimizedPaymentRequestReceipt(request);
   return {
     action,
     request: {
-      _id: request._id,
-      monthYear: request.monthYear,
-      dueDate: request.dueDate,
-      rentAmount: request.rentAmount,
-      requestedAmount: request.requestedAmount,
-      paymentMode: request.paymentMode,
-      receiptUrl: request.receiptUrl,
-      cashHandoverAt: request.cashHandoverAt,
-      submittedAt: request.submittedAt,
-      status: request.status,
+      _id: optimizedRequest._id,
+      monthYear: optimizedRequest.monthYear,
+      dueDate: optimizedRequest.dueDate,
+      rentAmount: optimizedRequest.rentAmount,
+      requestedAmount: optimizedRequest.requestedAmount,
+      paymentMode: optimizedRequest.paymentMode,
+      receiptUrl: optimizedRequest.receiptUrl,
+      originalReceiptUrl: optimizedRequest.originalReceiptUrl,
+      cashHandoverAt: optimizedRequest.cashHandoverAt,
+      submittedAt: optimizedRequest.submittedAt,
+      status: optimizedRequest.status,
     },
     tenant: tenant && {
-      _id: tenant._id,
-      name: tenant.name,
-      email: tenant.email,
-      phone: tenant.phone,
+      _id: optimizedTenant._id,
+      name: optimizedTenant.name,
+      email: optimizedTenant.email,
+      phone: optimizedTenant.phone,
       building: building.buildingName,
       floor: building.floorNumber,
       room: building.roomNumber,
@@ -659,7 +696,11 @@ router.post("/email-action/:token", async (req, res) => {
       request.emailActions.reject.usedAt = request.emailActions.reject.usedAt || new Date();
       await request.save();
 
-      return res.json({ message: "Payment request approved.", request, payment: result });
+      return res.json({
+        message: "Payment request approved.",
+        request: withOptimizedPaymentRequestReceipt(request),
+        payment: result,
+      });
     }
 
     request.status = "Rejected";
@@ -680,7 +721,10 @@ router.post("/email-action/:token", async (req, res) => {
       }
     }
 
-    res.json({ message: "Payment request rejected.", request });
+    res.json({
+      message: "Payment request rejected.",
+      request: withOptimizedPaymentRequestReceipt(request),
+    });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message || "Server error." });
   }
@@ -707,7 +751,11 @@ router.patch("/:id/approve", auth, async (req, res) => {
     request.approvedBy = req.user.id;
     await request.save();
 
-    res.json({ message: "Payment request approved.", request, payment: result });
+    res.json({
+      message: "Payment request approved.",
+      request: withOptimizedPaymentRequestReceipt(request),
+      payment: result,
+    });
   } catch (err) {
     res.status(err.statusCode || 500).json({ message: err.message || "Server error." });
   }
@@ -735,7 +783,10 @@ router.patch("/:id/reject", auth, async (req, res) => {
       }
     }
 
-    res.json({ message: "Payment request rejected.", request });
+    res.json({
+      message: "Payment request rejected.",
+      request: withOptimizedPaymentRequestReceipt(request),
+    });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
   }

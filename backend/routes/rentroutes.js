@@ -10,6 +10,10 @@ import Tenant from "../models/Tenant.js";
 import Building from "../models/Building.js";
 import RentPayment from "../models/Rentpayment.js";
 import { logActivity } from "../utils/activityLogger.js";
+import {
+  CLOUDINARY_IMAGE_WIDTHS,
+  withOptimizedTenantDocuments,
+} from "../utils/cloudinaryDelivery.js";
 
 const router = express.Router();
 
@@ -232,7 +236,12 @@ function sortDueResults(a, b) {
 
 function toResponseItem(item) {
   return {
-    tenant: item.tenant,
+    tenant: withOptimizedTenantDocuments(item.tenant, {
+      passportWidth: CLOUDINARY_IMAGE_WIDTHS.card,
+      passportHeight: CLOUDINARY_IMAGE_WIDTHS.card,
+      passportCrop: "fill",
+      documentWidth: CLOUDINARY_IMAGE_WIDTHS.documentThumb,
+    }),
     record: item.currentRecord,
     remaining: item.remaining,
     pendingMonths: item.pendingMonths,
@@ -1005,7 +1014,16 @@ router.get("/all", auth, async (req, res) => {
     const results = await Promise.all(
       tenants.map(async (tenant) => {
         const summary = await buildTenantSummary(tenant, req.user.id, FIVE_DAYS_MS);
-        return { tenant, record: summary.currentRecord, ...summary };
+        return {
+          tenant: withOptimizedTenantDocuments(tenant, {
+            passportWidth: CLOUDINARY_IMAGE_WIDTHS.card,
+            passportHeight: CLOUDINARY_IMAGE_WIDTHS.card,
+            passportCrop: "fill",
+            documentWidth: CLOUDINARY_IMAGE_WIDTHS.documentThumb,
+          }),
+          record: summary.currentRecord,
+          ...summary,
+        };
       })
     );
     res.json(results);
@@ -1036,7 +1054,16 @@ router.get("/search", auth, async (req, res) => {
     const results = await Promise.all(
       tenants.map(async (tenant) => {
         const summary = await buildTenantSummary(tenant, req.user.id, FIVE_DAYS_MS);
-        return { tenant, record: summary.currentRecord, ...summary };
+        return {
+          tenant: withOptimizedTenantDocuments(tenant, {
+            passportWidth: CLOUDINARY_IMAGE_WIDTHS.card,
+            passportHeight: CLOUDINARY_IMAGE_WIDTHS.card,
+            passportCrop: "fill",
+            documentWidth: CLOUDINARY_IMAGE_WIDTHS.documentThumb,
+          }),
+          record: summary.currentRecord,
+          ...summary,
+        };
       })
     );
     res.json(results);
@@ -1072,7 +1099,12 @@ router.get("/tenant/:tenantId", auth, async (req, res) => {
       }
     }
 
-    res.json({ tenant, buildingDetails, ...summary, history });
+    res.json({
+      tenant: withOptimizedTenantDocuments(tenant),
+      buildingDetails,
+      ...summary,
+      history,
+    });
   } catch (err) {
     res.status(500).json({ message: "Server error.", error: err.message });
   }
